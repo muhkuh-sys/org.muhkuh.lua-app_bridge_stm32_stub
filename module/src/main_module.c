@@ -69,6 +69,10 @@ typedef struct HISPI_PARAMETER_STRUCT
 extern unsigned char __buffer_start__[];
 
 
+extern const unsigned char _binary_stub_stm32h7xx_bin_start[];
+extern const unsigned char _binary_stub_stm32h7xx_bin_end[];
+
+
 /*-------------------------------------------------------------------------*/
 
 
@@ -189,41 +193,63 @@ static void uart_send(unsigned char ucData)
 
 
 
-static unsigned long uart_receive(unsigned char *pucData, unsigned long ulTimeoutInMs)
+static unsigned long uart_receive(unsigned char *pucData, unsigned int sizData, unsigned long ulCharTimeoutInMs, unsigned long ulTotalTimeoutInMs)
 {
 	HOSTDEF(ptUartAppArea);
 	unsigned long ulResult;
-	unsigned long ulTimer;
+	unsigned long ulTimerChar;
+	unsigned long ulTimerTotal;
 	unsigned long ulValue;
-	int iTimerElapsed;
+	int iCharTimerElapsed;
+	int iTotalTimerElapsed;
+	unsigned int uiRecCnt;
 
 
-	ulResult = STM32_RESULT_UartTimout;
+	ulResult = STM32_RESULT_Ok;
+
+	iCharTimerElapsed = 0;
+	iTotalTimerElapsed = 0;
 
 	/* Get the current system tick. */
-	ulTimer = systime_get_ms();
-	do
-	{
-		/* Is data in the receive FIFO? */
-		ulValue  = ptUartAppArea->ulUartfr;
-		ulValue &= HOSTMSK(uartfr_RXFE);
-		/* Timer elapsed? */
-		if( ulTimeoutInMs!=0 )
-		{
-			iTimerElapsed = systime_elapsed(ulTimer, ulTimeoutInMs);
-		}
-	} while( ulValue!=0 && iTimerElapsed==0 );
+	ulTimerTotal = systime_get_ms();
 
-	/* Is data in the FIFO? */
-	if( ulValue==0 )
+	uiRecCnt = 0U;
+	while( uiRecCnt<sizData )
 	{
-		ulValue  = ptUartAppArea->ulUartdr;
-		ulValue &= 0xffU;
-		if( pucData!=NULL )
+		ulTimerChar = systime_get_ms();
+		do
 		{
-			*pucData = (unsigned char)ulValue;
+			/* Is data in the receive FIFO? */
+			ulValue  = ptUartAppArea->ulUartfr;
+			ulValue &= HOSTMSK(uartfr_RXFE);
+			/* Char timer elapsed? */
+			if( ulCharTimeoutInMs!=0 )
+			{
+				iCharTimerElapsed = systime_elapsed(ulTimerChar, ulCharTimeoutInMs);
+			}
+			/* Total timer elapsed? */
+			if( ulTotalTimeoutInMs!=0 )
+			{
+				iTotalTimerElapsed = systime_elapsed(ulTimerTotal, ulTotalTimeoutInMs);
+			}
+		} while( ulValue!=0 && iCharTimerElapsed==0 && iTotalTimerElapsed==0 );
+
+		/* Is data in the FIFO? */
+		if( ulValue==0 )
+		{
+			ulValue  = ptUartAppArea->ulUartdr;
+			ulValue &= 0xffU;
+			if( pucData!=NULL )
+			{
+				pucData[uiRecCnt] = (unsigned char)ulValue;
+			}
+			++uiRecCnt;
 		}
-		ulResult = STM32_RESULT_Ok;
+		else
+		{
+			ulResult = STM32_RESULT_UartTimout;
+			break;
+		}
 	}
 
 	return ulResult;
@@ -231,7 +257,7 @@ static unsigned long uart_receive(unsigned char *pucData, unsigned long ulTimeou
 
 
 
-static void stm32boot_send_command(unsigned char ucCommand)
+static void stm32boot_send_with_inv(unsigned char ucCommand)
 {
 	uart_send(ucCommand);
 	uart_send(ucCommand^0xff);
@@ -249,7 +275,7 @@ static unsigned long stm32boot_wait_for_ack(unsigned long ulTimeoutInMs)
 	{
 		/* Wait for ACK/NACK. */
 		/* FIXME: This discards silently all other characters. The flow chart looks like it should by done like this, but is this really OK? */
-		ulResult = uart_receive(&ucData, ulTimeoutInMs);
+		ulResult = uart_receive(&ucData, 1U, 0U, ulTimeoutInMs);
 	} while( ulResult==STM32_RESULT_Ok && ucData!=STM32BOOT_ACK && ucData!=STM32BOOT_NACK );
 
 	if( ulResult==STM32_RESULT_Ok )
@@ -270,7 +296,7 @@ static unsigned long stm32boot_wait_for_ack(unsigned long ulTimeoutInMs)
 
 
 
-static void stm32boot_send_xor_data(const unsigned char *pucData, unsigned int sizData)
+static void stm32boot_send_xor_data(const unsigned char *pucData, unsigned int sizData ,unsigned char ucInit)
 {
 	const unsigned char *pucCnt;
 	const unsigned char *pucEnd;
@@ -280,7 +306,7 @@ static void stm32boot_send_xor_data(const unsigned char *pucData, unsigned int s
 
 	pucCnt = pucData;
 	pucEnd = pucData + sizData;
-	ucXor = 0x00;
+	ucXor = ucInit;
 	while( pucCnt<pucEnd )
 	{
 		ucData = *(pucCnt++);
@@ -292,16 +318,15 @@ static void stm32boot_send_xor_data(const unsigned char *pucData, unsigned int s
 
 
 
-static unsigned long execute_command(unsigned char ucCommand, unsigned char *pucData, unsigned int uiDataMaxSize, unsigned int *puiDataReceived)
+static unsigned long stm32boot_execute_command(unsigned char ucCommand, unsigned char *pucData, unsigned int uiDataMaxSize, unsigned int *puiDataReceived)
 {
 	unsigned long ulResult;
-	unsigned char ucData;
 	unsigned int uiReceiveLen;
-	unsigned int uiReceivePos;
+	unsigned char ucData;
 
 
 	/* Send the command. */
-	stm32boot_send_command(ucCommand);
+	stm32boot_send_with_inv(ucCommand);
 
 	/* Wait for ACK/NACK with a timeout of 1 second. */
 	ulResult = stm32boot_wait_for_ack(1000);
@@ -310,41 +335,29 @@ static unsigned long execute_command(unsigned char ucCommand, unsigned char *puc
 		/* Get the number of bytes to receive.
 		 * NOTE: The STM32 bootloadersends the number of bytes - 1 .
 		 */
-		ulResult = uart_receive(&ucData, 250);
+		ulResult = uart_receive(&ucData, 1U, 0U, 250U);
 		if( ulResult==STM32_RESULT_Ok )
 		{
-			uiReceivePos = 0;
 			uiReceiveLen = ucData + 1U;
-			/* Loop over all bytes. */
-			while( uiReceivePos<uiReceiveLen )
+			if( uiReceiveLen>uiDataMaxSize )
 			{
-				/* Get the next byte. */
-				ulResult = uart_receive(&ucData, 250);
+				ulResult = STM32_RESULT_UnexpectedSizeOfResult;
+			}
+			else
+			{
+				/* Receive the data. */
+				ulResult = uart_receive(pucData, uiReceiveLen, 250U, 0U);
 				if( ulResult==STM32_RESULT_Ok )
 				{
-					/* Is enough space left in the buffer? */
-					if( uiReceivePos<uiDataMaxSize )
+					if( puiDataReceived!=NULL )
 					{
-						pucData[uiReceivePos] = ucData;
+						*puiDataReceived = uiReceiveLen;
 					}
-					++uiReceivePos;
 				}
-				else
-				{
-					break;
-				}
-			}
 
-			if( ulResult==STM32_RESULT_Ok )
-			{
-				if( puiDataReceived!=NULL )
-				{
-					*puiDataReceived = uiReceivePos;
-				}
+				/* Wait for ACK/NACK with a timeout of 250ms. */
+				ulResult = stm32boot_wait_for_ack(250);
 			}
-
-			/* Wait for ACK/NACK with a timeout of 250ms. */
-			ulResult = stm32boot_wait_for_ack(250);
 		}
 	}
 
@@ -353,20 +366,222 @@ static unsigned long execute_command(unsigned char ucCommand, unsigned char *puc
 
 
 
-static unsigned long execute_command_read_memory(unsigned long ulAddress __attribute__((unused)), unsigned long *pulData __attribute__((unused)))
+static unsigned long stm32boot_execute_command_read_memory(unsigned long ulAddress, unsigned char *pucData, unsigned int sizData)
 {
-	/* FIXME: Continue here. */
-	return STM32_RESULT_UnalignedAddress;
+	unsigned long ulResult;
+	unsigned char aucAddress[4];
+	unsigned char ucSize;
+
+
+	/* Convert the address in a byte array.
+	 * NOTE: This must be MSB.
+	 */
+	aucAddress[3] = (unsigned char) (ulAddress & 0x000000ffU);
+	aucAddress[2] = (unsigned char)((ulAddress & 0x0000ff00U) >>  8U);
+	aucAddress[1] = (unsigned char)((ulAddress & 0x00ff0000U) >> 16U);
+	aucAddress[0] = (unsigned char)((ulAddress & 0xff000000U) >> 24U);
+
+	/* Send the command. */
+	stm32boot_send_with_inv(STM32BOOTCMD_ReadMemory);
+
+	/* Wait for ACK/NACK with a timeout of 1 second. */
+	ulResult = stm32boot_wait_for_ack(1000);
+	if( ulResult==STM32_RESULT_Ok )
+	{
+		/* Send the address. */
+		stm32boot_send_xor_data(aucAddress, 4U, 0x00U);
+
+		/* Wait for ACK/NACK with a timeout of 250ms. */
+		ulResult = stm32boot_wait_for_ack(250);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			/* Send the size of the data to read.
+			 * NOTE: The STM32 bootloader expects the number of bytes - 1.
+			 */
+			ucSize = (unsigned char)((sizData - 1U) & 0xffU);
+			stm32boot_send_with_inv(ucSize);
+
+			/* Wait for ACK/NACK with a timeout of 250ms. */
+			ulResult = stm32boot_wait_for_ack(250);
+			if( ulResult==STM32_RESULT_Ok )
+			{
+				/* Receive the data. */
+				ulResult = uart_receive(pucData, sizData, 250U, 0U);
+			}
+		}
+	}
+
+	return ulResult;
 }
 
 
 
-static unsigned long execute_command_write_memory(unsigned long ulAddress __attribute__((unused)), unsigned long ulData __attribute__((unused)))
+static unsigned long stm32boot_execute_command_write_memory(unsigned long ulAddress, const unsigned char *pucData, unsigned int sizData)
 {
-	/* FIXME: Continue here. */
-	return STM32_RESULT_UnalignedAddress;
+	unsigned long ulResult;
+	unsigned char ucSize;
+	unsigned char aucAddress[4];
+
+
+	/* Convert the address in a byte array.
+	 * NOTE: This must be MSB.
+	 */
+	aucAddress[3] = (unsigned char) (ulAddress & 0x000000ffU);
+	aucAddress[2] = (unsigned char)((ulAddress & 0x0000ff00U) >>  8U);
+	aucAddress[1] = (unsigned char)((ulAddress & 0x00ff0000U) >> 16U);
+	aucAddress[0] = (unsigned char)((ulAddress & 0xff000000U) >> 24U);
+
+	/* Send the command. */
+	stm32boot_send_with_inv(STM32BOOTCMD_WriteMemory);
+
+	/* Wait for ACK/NACK with a timeout of 1 second. */
+	ulResult = stm32boot_wait_for_ack(1000);
+	if( ulResult==STM32_RESULT_Ok )
+	{
+		/* Send the address. */
+		stm32boot_send_xor_data(aucAddress, 4U, 0x00U);
+
+		/* Wait for ACK/NACK with a timeout of 250ms. */
+		ulResult = stm32boot_wait_for_ack(250);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			/* Send...
+			 *   the data size in bytes - 1
+			 *   the data
+			 *   the checksum (size_minus_1 XOR data)
+			 */
+			ucSize = (unsigned char)((sizData-1U)&0xffU);
+			uart_send(ucSize);
+			stm32boot_send_xor_data(pucData, sizData, ucSize);
+
+			/* Wait for ACK/NACK with a timeout of 1 second. */
+			ulResult = stm32boot_wait_for_ack(1000);
+		}
+	}
+
+	return ulResult;
 }
 
+
+
+static unsigned long stm32boot_execute_command_go(unsigned long ulAddress)
+{
+	unsigned long ulResult;
+	unsigned char aucAddress[4];
+
+
+	/* Convert the address in a byte array.
+	 * NOTE: This must be MSB.
+	 */
+	aucAddress[3] = (unsigned char) (ulAddress & 0x000000ffU);
+	aucAddress[2] = (unsigned char)((ulAddress & 0x0000ff00U) >>  8U);
+	aucAddress[1] = (unsigned char)((ulAddress & 0x00ff0000U) >> 16U);
+	aucAddress[0] = (unsigned char)((ulAddress & 0xff000000U) >> 24U);
+
+	/* Send the command. */
+	stm32boot_send_with_inv(STM32BOOTCMD_Go);
+
+	/* Wait for ACK/NACK with a timeout of 1 second. */
+	ulResult = stm32boot_wait_for_ack(1000);
+	if( ulResult==STM32_RESULT_Ok )
+	{
+		/* Send the address. */
+		stm32boot_send_xor_data(aucAddress, 4U, 0x00U);
+
+		/* Wait for ACK/NACK with a timeout of 1 second. */
+		ulResult = stm32boot_wait_for_ack(1000);
+	}
+
+	return ulResult;
+}
+
+
+
+static unsigned long stm32boot_read_area(unsigned long ulAddress, unsigned char *pucData, unsigned int sizData)
+{
+	unsigned long ulResult;
+	unsigned char *pucCnt;
+	unsigned char *pucEnd;
+	unsigned int sizMaxChunk;
+	unsigned int sizChunk;
+
+
+	ulResult = STM32_RESULT_Ok;
+
+	/* Chunk the data.
+	 * NOTE: Use 128 bytes for now, even if the STM32 bootloader supports 256.
+	 */
+	sizMaxChunk = 128;
+
+	pucCnt = pucData;
+	pucEnd = pucData + sizData;
+	while( pucCnt<pucEnd )
+	{
+		/* Get the size of the next chunk. */
+		sizChunk = (unsigned int)(pucEnd-pucCnt);
+		if( sizChunk>sizMaxChunk )
+		{
+			sizChunk = sizMaxChunk;
+		}
+
+		ulResult = stm32boot_execute_command_read_memory(ulAddress, pucCnt, sizChunk);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			pucCnt += sizChunk;
+			ulAddress += sizChunk;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	return ulResult;
+}
+
+
+
+static unsigned long stm32boot_write_area(unsigned long ulAddress, const unsigned char *pucData, unsigned int sizData)
+{
+	unsigned long ulResult;
+	const unsigned char *pucCnt;
+	const unsigned char *pucEnd;
+	unsigned int sizMaxChunk;
+	unsigned int sizChunk;
+
+
+	ulResult = STM32_RESULT_Ok;
+
+	/* Chunk the data.
+	 * NOTE: Use 128 bytes for now, even if the STM32 bootloader supports 256.
+	 */
+	sizMaxChunk = 128;
+
+	pucCnt = pucData;
+	pucEnd = pucData + sizData;
+	while( pucCnt<pucEnd )
+	{
+		/* Get the size of the next chunk. */
+		sizChunk = (unsigned int)(pucEnd-pucCnt);
+		if( sizChunk>sizMaxChunk )
+		{
+			sizChunk = sizMaxChunk;
+		}
+
+		ulResult = stm32boot_execute_command_write_memory(ulAddress, pucCnt, sizChunk);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			pucCnt += sizChunk;
+			ulAddress += sizChunk;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	return ulResult;
+}
 
 
 
@@ -375,12 +590,14 @@ static unsigned long install_stub(void)
 	unsigned long ulResult;
 	unsigned char aucCpuId[2];
 	unsigned char aucBuffer[256];
+	unsigned char aucVerify[1024];
 	unsigned int uiDataReceived;
 	unsigned int fHasCmdReadMemory;
 	unsigned int fHasCmdWriteMemory;
 	unsigned int fHasCmdGo;
 	unsigned int uiCnt;
 	unsigned char ucData;
+	unsigned int uiStubSize;
 
 
 	/* NOTE: The STM32 must be already reset. */
@@ -393,7 +610,7 @@ static unsigned long install_stub(void)
 		/* Get the CPU ID.
 		 * Send the "GetID" command and expect the result 0x04 0x50.
 		 */
-		ulResult = execute_command(STM32BOOTCMD_GetID, aucCpuId, sizeof(aucCpuId), &uiDataReceived);
+		ulResult = stm32boot_execute_command(STM32BOOTCMD_GetID, aucCpuId, sizeof(aucCpuId), &uiDataReceived);
 		if( ulResult==STM32_RESULT_Ok )
 		{
 			if( uiDataReceived!=2 )
@@ -411,7 +628,7 @@ static unsigned long install_stub(void)
 					fHasCmdReadMemory = 0;
 					fHasCmdWriteMemory = 0;
 					fHasCmdGo = 0;
-					ulResult = execute_command(STM32BOOTCMD_Get, aucBuffer, sizeof(aucBuffer), &uiDataReceived);
+					ulResult = stm32boot_execute_command(STM32BOOTCMD_Get, aucBuffer, sizeof(aucBuffer), &uiDataReceived);
 					if( ulResult==STM32_RESULT_Ok )
 					{
 						for(uiCnt=0; uiCnt<uiDataReceived; ++uiCnt)
@@ -432,7 +649,28 @@ static unsigned long install_stub(void)
 						}
 						if( fHasCmdReadMemory!=0U && fHasCmdWriteMemory!=0U && fHasCmdGo!=0U )
 						{
-							ulResult = 11U;
+							/* Get the size of the STM32 stub. */
+							uiStubSize = (unsigned int)(_binary_stub_stm32h7xx_bin_end - _binary_stub_stm32h7xx_bin_start);
+							ulResult = stm32boot_write_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
+							if( ulResult==STM32_RESULT_Ok )
+							{
+								ulResult = stm32boot_read_area(0x20004100U, aucVerify, uiStubSize);
+								if( ulResult==STM32_RESULT_Ok )
+								{
+									if( memcmp(_binary_stub_stm32h7xx_bin_start, aucVerify, uiStubSize)==0 )
+									{
+										ulResult = stm32boot_execute_command_go(0x20004100U);
+										if( ulResult==STM32_RESULT_Ok )
+										{
+											ulResult = 14U;
+										}
+									}
+									else
+									{
+										ulResult = STM32_RESULT_VerifyError;
+									}
+								}
+							}
 						}
 						else
 						{
@@ -456,6 +694,8 @@ static unsigned long install_stub(void)
 static unsigned long module_command_read32(unsigned long ulAddress, unsigned long *pulData)
 {
 	unsigned long ulResult;
+	unsigned long ulValue;
+	unsigned char aucData[4];
 
 
 	if( (ulAddress&3)!=0 )
@@ -464,7 +704,16 @@ static unsigned long module_command_read32(unsigned long ulAddress, unsigned lon
 	}
 	else
 	{
-		ulResult = execute_command_read_memory(ulAddress, pulData);
+		ulResult = stm32boot_execute_command_read_memory(ulAddress, aucData, 4U);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			ulValue  =  (unsigned long)aucData[0];
+			ulValue  = ((unsigned long)aucData[1]) <<  8U;
+			ulValue  = ((unsigned long)aucData[1]) << 16U;
+			ulValue  = ((unsigned long)aucData[1]) << 24U;
+
+			*pulData = ulValue;
+		}
 	}
 
 	return ulResult;
@@ -475,6 +724,7 @@ static unsigned long module_command_read32(unsigned long ulAddress, unsigned lon
 static unsigned long module_command_write32(unsigned long ulAddress, unsigned long ulData)
 {
 	unsigned long ulResult;
+	unsigned char aucData[4];
 
 
 	if( (ulAddress&3)!=0 )
@@ -483,7 +733,12 @@ static unsigned long module_command_write32(unsigned long ulAddress, unsigned lo
 	}
 	else
 	{
-		ulResult = execute_command_write_memory(ulAddress, ulData);
+		aucData[0] = (unsigned char) (ulData & 0x000000ffU);
+		aucData[1] = (unsigned char)((ulData & 0x0000ff00U) >>  8U);
+		aucData[2] = (unsigned char)((ulData & 0x00ff0000U) >> 16U);
+		aucData[3] = (unsigned char)((ulData & 0xff000000U) >> 24U);
+
+		ulResult = stm32boot_execute_command_write_memory(ulAddress, aucData, 4U);
 	}
 
 	return ulResult;

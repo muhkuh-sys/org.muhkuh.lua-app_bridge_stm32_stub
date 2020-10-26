@@ -34,7 +34,8 @@ typedef enum STM32_RESULT_ENUM
 	STM32_RESULT_NACK                         =  6,
 	STM32_RESULT_UnexpectedSizeOfResult       =  7,
 	STM32_RESULT_UnexpectedCpuID              =  8,
-	STM32_RESULT_RequiredCommandsUnavailable  =  9
+	STM32_RESULT_RequiredCommandsUnavailable  =  9,
+	STM32_RESULT_VerifyError                  = 10
 } STM32_RESULT_T;
 
 
