@@ -1,0 +1,53 @@
+# -*- coding: utf-8 -*-
+#-------------------------------------------------------------------------#
+#   Copyright (C) 2020 by Christoph Thelen                                #
+#   doc_bacardi@users.sourceforge.net                                     #
+#                                                                         #
+#   This program is free software; you can redistribute it and/or modify  #
+#   it under the terms of the GNU General Public License as published by  #
+#   the Free Software Foundation; either version 2 of the License, or     #
+#   (at your option) any later version.                                   #
+#                                                                         #
+#   This program is distributed in the hope that it will be useful,       #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of        #
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         #
+#   GNU General Public License for more details.                          #
+#                                                                         #
+#   You should have received a copy of the GNU General Public License     #
+#   along with this program; if not, write to the                         #
+#   Free Software Foundation, Inc.,                                       #
+#   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             #
+#-------------------------------------------------------------------------#
+
+
+#----------------------------------------------------------------------------
+#
+# Import all required objects.
+#
+Import('atEnv')
+
+
+#----------------------------------------------------------------------------
+# This is the list of sources. The elements must be separated with whitespace
+# (i.e. spaces, tabs, newlines). The amount of whitespace does not matter.
+sources = """
+	src/init_module.S
+	src/main_module.c
+	src/pad_control.c
+"""
+
+
+#----------------------------------------------------------------------------
+#
+# Build the app bridge module.
+#
+aCppPath = ['src', '#platform/src', '#platform/src/lib', '#targets/version']
+
+tEnv = atEnv.NETX90_APP.Clone()
+tEnv.Replace(LDFILE = 'src/netx90_app_module.ld')
+tEnv.Append(CPPPATH = aCppPath)
+tSrc = tEnv.SetBuildPath('targets', 'src', sources)
+tElf = tEnv.Elf('targets/netx90_app_bridge_module_stm32.elf', tSrc + tEnv['PLATFORM_LIBRARY'])
+tTxt = tEnv.ObjDump('targets/netx90_app_bridge_module_stm32.txt', tElf, OBJDUMP_FLAGS=['--disassemble', '--source', '--all-headers', '--wide'])
+tBin = tEnv.ObjCopy('targets/netx90_app_bridge_module_stm32.bin', tElf)
+BRIDGE_MODULE_STM32 = tEnv.GccSymbolTemplate('targets/stm32.lua', tElf, GCCSYMBOLTEMPLATE_TEMPLATE=File('templates/stm32.lua'))

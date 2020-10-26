@@ -1,0 +1,67 @@
+# -*- coding: utf-8 -*-
+#-------------------------------------------------------------------------#
+#   Copyright (C) 2020 by Christoph Thelen                                #
+#   doc_bacardi@users.sourceforge.net                                     #
+#                                                                         #
+#   This program is free software; you can redistribute it and/or modify  #
+#   it under the terms of the GNU General Public License as published by  #
+#   the Free Software Foundation; either version 2 of the License, or     #
+#   (at your option) any later version.                                   #
+#                                                                         #
+#   This program is distributed in the hope that it will be useful,       #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of        #
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         #
+#   GNU General Public License for more details.                          #
+#                                                                         #
+#   You should have received a copy of the GNU General Public License     #
+#   along with this program; if not, write to the                         #
+#   Free Software Foundation, Inc.,                                       #
+#   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             #
+#-------------------------------------------------------------------------#
+
+
+#----------------------------------------------------------------------------
+#
+# Import all required objects.
+#
+Import('atEnv')
+
+
+#----------------------------------------------------------------------------
+# This is the list of sources. The elements must be separated with whitespace
+# (i.e. spaces, tabs, newlines). The amount of whitespace does not matter.
+sources = """
+	src/init.S
+	src/main_stub.c
+	src/vectors.c
+"""
+
+
+#----------------------------------------------------------------------------
+#
+# Build the iomatrix test.
+#
+aCppPath = ['src', '#targets/version']
+
+tEnv = atEnv.STM32H7xx.Clone()
+tEnv.Replace(LDFILE = 'src/stm32h753ii_ram.ld')
+tEnv.Append(CPPPATH = aCppPath)
+tSrc = tEnv.SetBuildPath('targets', 'src', sources)
+tElf = tEnv.Elf('targets/stub_stm32h7xx.elf', tSrc)
+STUB_STM32H7XX = tEnv.ObjCopy('targets/stub_stm32h7xx.bin', tElf)
+
+Export('STUB_STM32H7XX')
+
+"""
+#----------------------------------------------------------------------------
+#
+# Generate the LUA scripts from the template.
+# This extracts symbols and enumeration values from the ELF file and inserts
+# them into the LUA script.
+#
+LUA_NETX_BASE = atEnv.NETX56.GccSymbolTemplate('targets/lua/io_matrix/netx_base.lua', elf_netx56_t, GCCSYMBOLTEMPLATE_TEMPLATE=File('templates/io_matrix/netx_base.lua'))
+LUA_NETX90_MPW = atEnv.NETX56.GccSymbolTemplate('targets/lua/io_matrix/netx90_mpw.lua', elf_netx56_t, GCCSYMBOLTEMPLATE_TEMPLATE=File('templates/io_matrix/netx90_mpw.lua'))
+LUA_NETX90 = atEnv.NETX56.GccSymbolTemplate('targets/lua/io_matrix/netx90.lua', elf_netx56_t, GCCSYMBOLTEMPLATE_TEMPLATE=File('templates/io_matrix/netx90.lua'))
+LUA_NETX4000 = atEnv.NETX56.GccSymbolTemplate('targets/lua/io_matrix/netx4000.lua', elf_netx56_t, GCCSYMBOLTEMPLATE_TEMPLATE=File('templates/io_matrix/netx4000.lua'))
+Export('LUA_NETX_BASE', 'LUA_NETX4000', 'LUA_NETX90', 'LUA_NETX90_MPW')
+"""
