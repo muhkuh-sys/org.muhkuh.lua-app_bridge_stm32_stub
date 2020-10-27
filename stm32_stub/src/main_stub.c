@@ -1,5 +1,30 @@
 #include <stdio.h>
 
+
+#define STM32BOOT_ACK                  0x79U
+#define STM32BOOT_NACK                 0x1fU
+
+#define STM32BOOTCMD_Get               0x00U
+#define STM32BOOTCMD_GetVersion        0x01U
+#define STM32BOOTCMD_GetID             0x02U
+#define STM32BOOTCMD_ReadMemory        0x11U
+#define STM32BOOTCMD_Go                0x21U
+#define STM32BOOTCMD_WriteMemory       0x31U
+#define STM32BOOTCMD_Erase             0x43U
+#define STM32BOOTCMD_ExtendedErase     0x44U
+#define STM32BOOTCMD_WriteProtect      0x63U
+#define STM32BOOTCMD_WriteUnprotect    0x73U
+#define STM32BOOTCMD_ReadoutProtect    0x82U
+#define STM32BOOTCMD_ReadoutUnprotect  0x92U
+
+
+typedef union PTR_UNION
+{
+	unsigned long ul;
+	unsigned long *pul;
+} PTR_T;
+
+
 /* Define some peripherals here. */
 typedef struct STM32H7xx_GPIO_AREA_Ttag
 {
@@ -14,6 +39,23 @@ typedef struct STM32H7xx_GPIO_AREA_Ttag
 	volatile uint32_t  ulAfL;
 	volatile uint32_t  ulAfH;
 } STM32H7xx_GPIO_AREA_T;
+
+
+typedef struct STM32H7xx_UART_AREA_Ttag
+{
+	volatile uint32_t  ulCR1;
+	volatile uint32_t  ulCR2;
+	volatile uint32_t  ulCR3;
+	volatile uint32_t  ulBRR;
+	volatile uint32_t  ulGTPR;
+	volatile uint32_t  ulRTOR;
+	volatile uint32_t  ulRQR;
+	volatile uint32_t  ulISR;
+	volatile uint32_t  ulICR;
+	volatile uint32_t  ulRDR;
+	volatile uint32_t  ulTDR;
+	volatile uint32_t  ulPRESC;
+} STM32H7xx_UART_AREA_T;
 
 
 typedef struct STM32H7xx_RCC_AREA_Ttag
@@ -97,6 +139,8 @@ typedef struct STM32H7xx_RCC_AREA_Ttag
 #define Addr_STM32H7xx_gpioj 0x58022400U
 #define Addr_STM32H7xx_gpiok 0x58022800U
 
+#define Addr_STM32H7xx_usart3 0x40004800U
+
 #define Addr_STM32H7xx_rcc 0x58024400U
 
 #define STM32H7xx_DEF_ptGpioAArea STM32H7xx_GPIO_AREA_T * const ptGpioAArea = (STM32H7xx_GPIO_AREA_T * const)Addr_STM32H7xx_gpioa;
@@ -111,33 +155,367 @@ typedef struct STM32H7xx_RCC_AREA_Ttag
 #define STM32H7xx_DEF_ptGpioJArea STM32H7xx_GPIO_AREA_T * const ptGpioJArea = (STM32H7xx_GPIO_AREA_T * const)Addr_STM32H7xx_gpioj;
 #define STM32H7xx_DEF_ptGpioKArea STM32H7xx_GPIO_AREA_T * const ptGpioKArea = (STM32H7xx_GPIO_AREA_T * const)Addr_STM32H7xx_gpiok;
 
+#define STM32H7xx_DEF_ptUsart3Area STM32H7xx_UART_AREA_T * const ptUsart3Area = (STM32H7xx_UART_AREA_T * const)Addr_STM32H7xx_usart3;
+
 #define STM32H7xx_DEF_ptRccArea STM32H7xx_RCC_AREA_T * const ptRccArea = (STM32H7xx_RCC_AREA_T * const)Addr_STM32H7xx_rcc;
+
+
+static void setup_gpio_and_uart(void)
+{
+	STM32H7xx_DEF_ptGpioBArea;
+//	STM32H7xx_DEF_ptGpioIArea;
+	STM32H7xx_DEF_ptUsart3Area;
+	unsigned long ulValue;
+
+
+	/* Switch GPIO B10 and B11 to peripheral. */
+	ulValue  = ptGpioBArea->ulMode;
+	ulValue &= 0xff0fffffU;
+	ulValue |= 0x00a00000U;
+	ptGpioBArea->ulMode = ulValue;
+
+	/* Set the speed of the pins to high. */
+	ulValue  = ptGpioBArea->ulOSpeed;
+	ulValue &= 0xff0fffffU;
+	ulValue |= 0x00f00000U;
+	ptGpioBArea->ulOSpeed = ulValue;
+
+	/* Set the alternate function for B10 and B11 to 7. */
+	ulValue  = ptGpioBArea->ulAfH;
+	ulValue &= 0xffff00ffU;
+	ulValue |= 0x00007700U;
+	ptGpioBArea->ulAfH = ulValue;
+#if 0
+	/* Switch GPIO I0 to output. */
+	ulValue  = ptGpioIArea->ulMode;
+	ulValue &= 0xfffffffcU;
+	ulValue |= 0x00000001U;
+	ptGpioIArea->ulMode = ulValue;
+
+	/* Switch the LED off. */
+	ptGpioIArea->ulOd = 1U;
+#endif
+	/*
+	 * Setup the UART.
+	 */
+	/* Disable the UART. */
+	ptUsart3Area->ulCR1 = 0;
+
+	ptUsart3Area->ulCR2 = 0;
+	ptUsart3Area->ulCR3 = 0;
+	ptUsart3Area->ulBRR = 0x0000022cU;
+	ptUsart3Area->ulGTPR = 0;
+	ptUsart3Area->ulRTOR = 0;
+	ptUsart3Area->ulRQR = 0;
+	ptUsart3Area->ulPRESC = 0;
+	/* Enable the UART. */
+	ptUsart3Area->ulCR1 = 0x2000140dU;
+}
+
+
+#if 0
+static void led_on(void)
+{
+	STM32H7xx_DEF_ptGpioIArea;
+
+
+	ptGpioIArea->ulOd = 0U;
+
+	while(1) {};
+}
+#endif
+
+
+static unsigned char uart_get(void)
+{
+	STM32H7xx_DEF_ptUsart3Area;
+	unsigned long ulValue;
+
+
+	/* Wait for RX FIFO not empty. */
+	do
+	{
+		ulValue  = ptUsart3Area->ulISR;
+		ulValue &= 1U << 5U;
+	} while( ulValue==0 );
+
+	/* Get the data. */
+	ulValue = ptUsart3Area->ulRDR;
+	ulValue &= 0x000000ffU;
+
+	return (unsigned char)ulValue;
+}
+
+
+
+static void uart_put(unsigned char ucData)
+{
+	STM32H7xx_DEF_ptUsart3Area;
+	unsigned long ulValue;
+
+
+	/* Wait for space in the FIFO. */
+	do
+	{
+		ulValue  = ptUsart3Area->ulISR;
+		ulValue &= 1U << 7U;
+	} while( ulValue==0 );
+
+	ptUsart3Area->ulTDR = (unsigned long)ucData;
+}
+
+
+
+static unsigned char get_inv_data(void)
+{
+	unsigned char ucCmd0;
+	unsigned char ucCmd1;
+
+
+	/* Get the first byte. */
+	ucCmd1 = uart_get();
+	do
+	{
+		ucCmd0 = ucCmd1;
+		ucCmd1 = uart_get();
+	} while( ucCmd0!=(ucCmd1^0xffU) );
+
+	return ucCmd0;
+}
+
+
+
+static int get_xor_data(unsigned char *pucBuffer, unsigned int sizBuffer, unsigned char ucXorInit)
+{
+	int iResult;
+	unsigned int uiCnt;
+	unsigned char ucData;
+	unsigned char ucXor;
+
+
+	uiCnt = 0;
+	ucXor = ucXorInit;
+	while( uiCnt<sizBuffer )
+	{
+		/* Get the next data byte and store it into the buffer. */
+		ucData = uart_get();
+		pucBuffer[uiCnt] = ucData;
+
+		/* Update the checksum. */
+		ucXor ^= ucData;
+
+		++uiCnt;
+	}
+
+	/* Get the checksum. */
+	ucData = uart_get();
+	iResult = 0;
+	if( ucData!=ucXor )
+	{
+		iResult = -1;
+	}
+	return iResult;
+}
+
+
+
+static void send_ack(void)
+{
+	uart_put(STM32BOOT_ACK);
+}
+
+
+
+static void send_nack(void)
+{
+	uart_put(STM32BOOT_NACK);
+}
+
+
+
+static unsigned long aulBuffer[256 / sizeof(unsigned long)];
+
+
+
+static void cmd_read_memory(void)
+{
+	int iResult;
+	unsigned char aucAddressMSB[4];
+	PTR_T tPtr;
+	unsigned char ucSizeInBytesMinus1;
+	unsigned int uiSizeInBytes;
+	unsigned int uiSizeInDW;
+	unsigned int uiCnt;
+	unsigned char *pucBuffer;
+
+
+	/* ACK the command. */
+	send_ack();
+
+	/* Get the address (4 bytes in MSB order). */
+	iResult = get_xor_data(aucAddressMSB, sizeof(aucAddressMSB), 0x00);
+	if( iResult!=0 )
+	{
+		send_nack();
+	}
+	else
+	{
+		/* Convert the MSB address to a LSB pointer. */
+		tPtr.ul  =  (unsigned long)(aucAddressMSB[3]);
+		tPtr.ul |= ((unsigned long)(aucAddressMSB[2])) <<  8U;
+		tPtr.ul |= ((unsigned long)(aucAddressMSB[1])) << 16U;
+		tPtr.ul |= ((unsigned long)(aucAddressMSB[0])) << 24U;
+
+		/* Is the pointer 4 byte aligned? */
+		if( (tPtr.ul & 3U)!=0 )
+		{
+			send_nack();
+		}
+		else
+		{
+			/* ACK the address. */
+			send_ack();
+
+			/* Get the number of bytes to read - 1. */
+			ucSizeInBytesMinus1 = get_inv_data();
+			uiSizeInBytes = ucSizeInBytesMinus1 + 1U;
+			/* Is the size a multiple of 4? */
+			if( (uiSizeInBytes & 3U)!=0 )
+			{
+				send_nack();
+			}
+			else
+			{
+				/* ACK the number of bytes. */
+				send_ack();
+
+				uiSizeInDW = uiSizeInBytes / sizeof(unsigned long);
+
+				/* Copy the data with 4 byte accesses. */
+				for(uiCnt=0; uiCnt<uiSizeInDW; ++uiCnt)
+				{
+					aulBuffer[uiCnt] = tPtr.pul[uiCnt];
+				}
+
+				pucBuffer = (unsigned char*)aulBuffer;
+				for(uiCnt=0; uiCnt<uiSizeInBytes; ++uiCnt)
+				{
+					uart_put(pucBuffer[uiCnt]);
+				}
+			}
+		}
+	}
+}
+
+
+
+static void cmd_write_memory(void)
+{
+	int iResult;
+	unsigned char aucAddressMSB[4];
+	PTR_T tPtr;
+	unsigned char ucSizeInBytesMinus1;
+	unsigned int uiSizeInBytes;
+	unsigned int uiSizeInDW;
+	unsigned int uiCnt;
+	unsigned char *pucBuffer;
+
+
+	/* ACK the command. */
+	send_ack();
+
+	/* Get the address (4 bytes in MSB order). */
+	iResult = get_xor_data(aucAddressMSB, sizeof(aucAddressMSB), 0x00);
+	if( iResult!=0 )
+	{
+		send_nack();
+	}
+	else
+	{
+		/* Convert the MSB address to a LSB pointer. */
+		tPtr.ul  =  (unsigned long)(aucAddressMSB[3]);
+		tPtr.ul |= ((unsigned long)(aucAddressMSB[2])) <<  8U;
+		tPtr.ul |= ((unsigned long)(aucAddressMSB[1])) << 16U;
+		tPtr.ul |= ((unsigned long)(aucAddressMSB[0])) << 24U;
+
+		/* Is the pointer 4 byte aligned? */
+		if( (tPtr.ul & 3U)!=0 )
+		{
+			send_nack();
+		}
+		else
+		{
+			/* ACK the address. */
+			send_ack();
+
+			/* Get the number of bytes to read - 1. */
+			ucSizeInBytesMinus1 = uart_get();
+			uiSizeInBytes = ucSizeInBytesMinus1 + 1U;
+			/* Receive all data bytes. */
+			pucBuffer = (unsigned char*)aulBuffer;
+			iResult = get_xor_data(pucBuffer, uiSizeInBytes, ucSizeInBytesMinus1);
+			if( iResult!=0 )
+			{
+				send_nack();
+			}
+			else
+			{
+				/* Is the number of bytes a multiple of 4? */
+				if( (uiSizeInBytes & 3U)!=0 )
+				{
+					send_nack();
+				}
+				else
+				{
+					/* ACK the size and data. */
+					send_ack();
+
+					uiSizeInDW = uiSizeInBytes / sizeof(unsigned long);
+
+					/* Copy the data with 4 byte accesses. */
+					for(uiCnt=0; uiCnt<uiSizeInDW; ++uiCnt)
+					{
+						tPtr.pul[uiCnt] = aulBuffer[uiCnt];
+					}
+				}
+			}
+		}
+	}
+}
+
 
 
 void stub_main(void) __attribute__ ((noreturn));
 void stub_main(void)
 {
-	STM32H7xx_DEF_ptRccArea;
-	STM32H7xx_DEF_ptGpioIArea;
-	unsigned long ulValue;
+	unsigned char ucCommand;
 
 
-	/* Enable the clocks for the GPIO I peripheral. */
-	ulValue = ptRccArea->AHB4ENR;
-	ulValue |= 1U << 7U;
-	ptRccArea->AHB4ENR = ulValue;
+	setup_gpio_and_uart();
 
-	/* Switch GPIO I0 to output. */
-	ulValue = ptGpioIArea->ulMode;
-	ulValue &= 0xfffffffcU;
-	ulValue |= 0x00000001U;
-	ptGpioIArea->ulMode = ulValue;
-	/* Set GPIO I0 to 0 (LED on). */
-	ptGpioIArea->ulOd = 0;
-
+	while(1)
+	{
+		/* Get a command. */
+		ucCommand = get_inv_data();
+		if( ucCommand==STM32BOOTCMD_ReadMemory )
+		{
+			cmd_read_memory();
+		}
+		else if( ucCommand==STM32BOOTCMD_WriteMemory )
+		{
+			cmd_write_memory();
+		}
+		else
+		{
+			/* Unknown command. */
+			send_nack();
+		}
+	}
+#if 0
 	/* WFE has a strage side effect. The program crashes at some strange address. Maybe a vector call at Power Down? */
 	while(1)
 	{
 //		__asm__("WFE");
 	}
+#endif
 }

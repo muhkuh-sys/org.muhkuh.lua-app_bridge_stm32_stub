@@ -662,7 +662,10 @@ static unsigned long install_stub(void)
 										ulResult = stm32boot_execute_command_go(0x20004100U);
 										if( ulResult==STM32_RESULT_Ok )
 										{
-											ulResult = 14U;
+											/* Wait until the stub is active. */
+											systime_delay_ms(500);
+
+											ulResult = STM32_RESULT_Ok;
 										}
 									}
 									else
@@ -708,9 +711,9 @@ static unsigned long module_command_read32(unsigned long ulAddress, unsigned lon
 		if( ulResult==STM32_RESULT_Ok )
 		{
 			ulValue  =  (unsigned long)aucData[0];
-			ulValue  = ((unsigned long)aucData[1]) <<  8U;
-			ulValue  = ((unsigned long)aucData[1]) << 16U;
-			ulValue  = ((unsigned long)aucData[1]) << 24U;
+			ulValue |= ((unsigned long)aucData[1]) <<  8U;
+			ulValue |= ((unsigned long)aucData[2]) << 16U;
+			ulValue |= ((unsigned long)aucData[3]) << 24U;
 
 			*pulData = ulValue;
 		}
