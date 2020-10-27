@@ -34,9 +34,9 @@ function Stm32Sequence:read_data32(ulAddress)
 end
 
 
-function Stm32Sequence:writeData32(ulAddress, ulData)
+function Stm32Sequence:write_data32(ulAddress, ulData)
   local strBin
-  strBin = self.tStructureWriteRegister16:write{
+  strBin = self.tStructureWriteData32:write{
     ucCommand = self.tStm32.STM32_COMMAND_WriteData32,
     ulAddress = ulAddress,
     ulData = ulData
@@ -70,7 +70,7 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.tLog = tLog
 
   -- This is the path to the module binary.
-  self.strModulePath = 'netx/netx90_module_stm32.bin'
+  self.strModulePath = 'netx/netx90_app_bridge_module_stm32.bin'
 
   -- TODO: Get this from the binary.
   self.ulModuleLoadAddress = 0x000B8000
@@ -133,7 +133,7 @@ end
 
 
 function AppBridgeModuleStm32:sequence_create()
-  return HiSpiSequence(self, self.tLog)
+  return Stm32Sequence(self, self.tLog)
 end
 
 
