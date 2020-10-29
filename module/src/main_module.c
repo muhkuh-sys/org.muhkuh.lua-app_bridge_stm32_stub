@@ -749,6 +749,45 @@ static unsigned long module_command_write32(unsigned long ulAddress, unsigned lo
 
 
 
+static unsigned long module_command_rmw32(unsigned long ulAddress, unsigned long ulAnd, unsigned long ulOr)
+{
+	unsigned long ulResult;
+	unsigned char aucData[4];
+	unsigned long ulValue;
+
+
+	if( (ulAddress&3)!=0 )
+	{
+		ulResult = STM32_RESULT_UnalignedAddress;
+	}
+	else
+	{
+		/* Read the register. */
+		ulResult = stm32boot_execute_command_read_memory(ulAddress, aucData, 4U);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			ulValue  =  (unsigned long)aucData[0];
+			ulValue |= ((unsigned long)aucData[1]) <<  8U;
+			ulValue |= ((unsigned long)aucData[2]) << 16U;
+			ulValue |= ((unsigned long)aucData[3]) << 24U;
+
+			ulValue &= ulAnd;
+			ulValue |= ulOr;
+
+			aucData[0] = (unsigned char) (ulValue & 0x000000ffU);
+			aucData[1] = (unsigned char)((ulValue & 0x0000ff00U) >>  8U);
+			aucData[2] = (unsigned char)((ulValue & 0x00ff0000U) >> 16U);
+			aucData[3] = (unsigned char)((ulValue & 0xff000000U) >> 24U);
+
+			ulResult = stm32boot_execute_command_write_memory(ulAddress, aucData, 4U);
+		}
+	}
+
+	return ulResult;
+}
+
+
+
 static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 {
 	unsigned long ulResult;
@@ -759,6 +798,8 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 	STM32_COMMAND_T tCommand;
 	unsigned long ulRegisterAddress;
 	unsigned long ulData;
+	unsigned long ulAnd;
+	unsigned long ulOr;
 
 
 	ulResult = STM32_RESULT_Ok;
@@ -780,6 +821,7 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 
 		case STM32_COMMAND_ReadData32:
 		case STM32_COMMAND_WriteData32:
+		case STM32_COMMAND_RmwData32:
 			ulResult = STM32_RESULT_Ok;
 			break;
 
@@ -865,6 +907,44 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 				}
 				break;
 
+			case STM32_COMMAND_RmwData32:
+				/* The RmwData32 command needs 13 bytes. */
+				if( ulSizeLeft<13U )
+				{
+					ulResult = STM32_RESULT_NotEnoughSequenceData;
+				}
+				else
+				{
+					ulRegisterAddress  = (unsigned long)(pucSequenceCnt[1]);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[2] <<  8U);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[3] << 16U);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[4] << 24U);
+
+					ulAnd  = (unsigned long)(pucSequenceCnt[5]);
+					ulAnd |= (unsigned long)(pucSequenceCnt[6] <<  8U);
+					ulAnd |= (unsigned long)(pucSequenceCnt[7] << 16U);
+					ulAnd |= (unsigned long)(pucSequenceCnt[8] << 24U);
+
+					ulOr  = (unsigned long)(pucSequenceCnt[9]);
+					ulOr |= (unsigned long)(pucSequenceCnt[10] <<  8U);
+					ulOr |= (unsigned long)(pucSequenceCnt[11] << 16U);
+					ulOr |= (unsigned long)(pucSequenceCnt[12] << 24U);
+
+					if( (ulRegisterAddress&3)!=0 )
+					{
+						ulResult = STM32_RESULT_UnalignedAddress;
+					}
+					else
+					{
+						ulResult = module_command_rmw32(ulRegisterAddress, ulAnd, ulOr);
+						if( ulResult==STM32_RESULT_Ok )
+						{
+							pucSequenceCnt += 13U;
+						}
+					}
+				}
+				break;
+
 			case STM32_COMMAND_RunSequence:
 				/* The "run sequence" command can not be used in a sequence. */
 				break;
@@ -882,7 +962,7 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 
 
 
-unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, unsigned long ulParameter2, unsigned long ulParameter3 __attribute__((unused)))
+unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, unsigned long ulParameter2, unsigned long ulParameter3)
 {
 	unsigned long ulResult;
 	PTR_T tPtr;
@@ -912,6 +992,15 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 *  ulParameter2 = data to write to the STM32
 		 */
 		ulResult = module_command_write32(ulParameter1, ulParameter2);
+	}
+	else if( ulParameter0==STM32_COMMAND_RmwData32 )
+	{
+		/* RmwData32 has 3 parameter:
+		 *  ulParameter1 = address in STM32 memory
+		 *  ulParameter2 = value to AND
+		 *  ulParameter3 = vaule to OR
+		 */
+		ulResult = module_command_rmw32(ulParameter1, ulParameter2, ulParameter3);
 	}
 	else if( ulParameter0==STM32_COMMAND_RunSequence )
 	{

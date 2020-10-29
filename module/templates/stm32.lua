@@ -17,6 +17,13 @@ function Stm32Sequence:_init(tStm32, tLog)
     ulData:u4
   ]])
 
+  self.tStructureRmwData32 = vstruct.compile([[
+    ucCommand:u1
+    ulAddress:u4
+    ulAnd:u4
+    ulOr:u4
+  ]])
+
   self.tSequence = { readsize = 0 }
 end
 
@@ -40,6 +47,20 @@ function Stm32Sequence:write_data32(ulAddress, ulData)
     ucCommand = self.tStm32.STM32_COMMAND_WriteData32,
     ulAddress = ulAddress,
     ulData = ulData
+  }
+
+  local tSequence = self.tSequence
+  table.insert(tSequence, strBin)
+end
+
+
+function Stm32Sequence:rmw_data32(ulAddress, ulAnd, ulOr)
+  local strBin
+  strBin = self.tStructureRmwData32:write{
+    ucCommand = self.tStm32.STM32_COMMAND_RmwData32,
+    ulAddress = ulAddress,
+    ulAnd = ulAnd,
+    ulOr = ulOr
   }
 
   local tSequence = self.tSequence
@@ -80,6 +101,7 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.STM32_COMMAND_Initialize = ${STM32_COMMAND_Initialize}
   self.STM32_COMMAND_ReadData32 = ${STM32_COMMAND_ReadData32}
   self.STM32_COMMAND_WriteData32 = ${STM32_COMMAND_WriteData32}
+  self.STM32_COMMAND_RmwData32 = ${STM32_COMMAND_RmwData32}
   self.STM32_COMMAND_RunSequence = ${STM32_COMMAND_RunSequence}
 end
 
@@ -127,7 +149,19 @@ function AppBridgeModuleStm32:write_data32(ulAddress, ulData)
   local ulResult = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_WriteData32, ulAddress, ulData)
   if ulResult~=0 then
     tLog.error('Failed to write STM32[0x%08x]=0x%08x : %d', ulAddress, ulData, ulResult)
-    error('Failed to read.')
+    error('Failed to write.')
+  end
+end
+
+
+function AppBridgeModuleStm32:rmw_data32(ulAddress, ulAnd, ulOr)
+  local tAppBridge = self.tAppBridge
+  local tLog = self.tLog
+
+  local ulResult = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_RmwData32, ulAddress, ulAnd, ulOr)
+  if ulResult~=0 then
+    tLog.error('Failed to write STM32[0x%08x]=(STM32[0x%08x] AND 0x%08x) OR 0x%08x : %d', ulAddress, ulAddress, ulAnd, ulOr, ulResult)
+    error('Failed to rmw.')
   end
 end
 
