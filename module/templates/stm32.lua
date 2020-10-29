@@ -24,6 +24,14 @@ function Stm32Sequence:_init(tStm32, tLog)
     ulOr:u4
   ]])
 
+  self.tStructurePollData32 = vstruct.compile([[
+    ucCommand:u1
+    ulAddress:u4
+    ulAnd:u4
+    ulCmp:u4
+    ulTimeoutInMs:u4
+  ]])
+
   self.tSequence = { readsize = 0 }
 end
 
@@ -68,6 +76,21 @@ function Stm32Sequence:rmw_data32(ulAddress, ulAnd, ulOr)
 end
 
 
+function Stm32Sequence:poll_data32(ulAddress, ulAnd, ulCmp, ulTimeoutInMs)
+  local strBin
+  strBin = self.tStructurePollData32:write{
+    ucCommand = self.tStm32.STM32_COMMAND_PollData32,
+    ulAddress = ulAddress,
+    ulAnd = ulAnd,
+    ulCmp = ulCmp,
+    ulTimeoutInMs = ulTimeoutInMs
+  }
+
+  local tSequence = self.tSequence
+  table.insert(tSequence, strBin)
+end
+
+
 function Stm32Sequence:run()
   local tSequence = self.tSequence
 
@@ -102,6 +125,7 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.STM32_COMMAND_ReadData32 = ${STM32_COMMAND_ReadData32}
   self.STM32_COMMAND_WriteData32 = ${STM32_COMMAND_WriteData32}
   self.STM32_COMMAND_RmwData32 = ${STM32_COMMAND_RmwData32}
+  self.STM32_COMMAND_PollData32 = ${STM32_COMMAND_PollData32}
   self.STM32_COMMAND_RunSequence = ${STM32_COMMAND_RunSequence}
 end
 
@@ -162,6 +186,26 @@ function AppBridgeModuleStm32:rmw_data32(ulAddress, ulAnd, ulOr)
   if ulResult~=0 then
     tLog.error('Failed to write STM32[0x%08x]=(STM32[0x%08x] AND 0x%08x) OR 0x%08x : %d', ulAddress, ulAddress, ulAnd, ulOr, ulResult)
     error('Failed to rmw.')
+  end
+end
+
+
+function AppBridgeModuleStm32:poll_data32(ulAddress, ulAnd, ulCmp, ulTimeoutInMs)
+  local tAppBridge = self.tAppBridge
+  local tLog = self.tLog
+
+  -- The "poll" command exceeds the available parameters of the "go" command.
+  -- The data must be stored somewhere else.
+  local ulParameter = self.ulModuleBufferArea
+  tAppBridge:write_register(ulParameter,      ulAddress)
+  tAppBridge:write_register(ulParameter+0x04, ulAnd)
+  tAppBridge:write_register(ulParameter+0x08, ulCmp)
+  tAppBridge:write_register(ulParameter+0x0c, ulTimeoutInMs)
+
+  local ulResult = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_PollData32, ulParameter)
+  if ulResult~=0 then
+    tLog.error('Failed to poll (STM32[0x%08x] AND 0x%08x) == 0x%08x in %dms : %d', ulAddress, ulAnd, ulCmp, ulTimeoutInMs, ulResult)
+    error('Failed to poll.')
   end
 end
 

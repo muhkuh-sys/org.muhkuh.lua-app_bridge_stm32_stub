@@ -788,6 +788,56 @@ static unsigned long module_command_rmw32(unsigned long ulAddress, unsigned long
 
 
 
+static unsigned long module_command_poll32(unsigned long ulAddress, unsigned long ulAnd, unsigned long ulCmp, unsigned long ulTimeoutInMs)
+{
+	unsigned long ulResult;
+	unsigned char aucData[4];
+	unsigned long ulValue;
+	unsigned long ulTimer;
+	int iTimerElapsed;
+
+
+	if( (ulAddress&3)!=0 )
+	{
+		ulResult = STM32_RESULT_UnalignedAddress;
+	}
+	else
+	{
+		ulTimer = systime_get_ms();
+
+		do
+		{
+			/* Read the register. */
+			ulResult = stm32boot_execute_command_read_memory(ulAddress, aucData, 4U);
+			if( ulResult==STM32_RESULT_Ok )
+			{
+				ulValue  =  (unsigned long)aucData[0];
+				ulValue |= ((unsigned long)aucData[1]) <<  8U;
+				ulValue |= ((unsigned long)aucData[2]) << 16U;
+				ulValue |= ((unsigned long)aucData[3]) << 24U;
+
+				ulValue &= ulAnd;
+				if( ulValue==ulCmp )
+				{
+					break;
+				}
+				else
+				{
+					iTimerElapsed = systime_elapsed(ulTimer, ulTimeoutInMs);
+					if( iTimerElapsed!=0 )
+					{
+						ulResult = STM32_RESULT_PollTimedOut;
+					}
+				}
+			}
+		} while( ulResult==STM32_RESULT_Ok );
+	}
+
+	return ulResult;
+}
+
+
+
 static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 {
 	unsigned long ulResult;
@@ -800,6 +850,8 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 	unsigned long ulData;
 	unsigned long ulAnd;
 	unsigned long ulOr;
+	unsigned long ulCmp;
+	unsigned long ulTimeoutInMs;
 
 
 	ulResult = STM32_RESULT_Ok;
@@ -822,6 +874,7 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 		case STM32_COMMAND_ReadData32:
 		case STM32_COMMAND_WriteData32:
 		case STM32_COMMAND_RmwData32:
+		case STM32_COMMAND_PollData32:
 			ulResult = STM32_RESULT_Ok;
 			break;
 
@@ -945,6 +998,49 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 				}
 				break;
 
+			case STM32_COMMAND_PollData32:
+				/* The PollData32 command needs 17 bytes. */
+				if( ulSizeLeft<17U )
+				{
+					ulResult = STM32_RESULT_NotEnoughSequenceData;
+				}
+				else
+				{
+					ulRegisterAddress  = (unsigned long)(pucSequenceCnt[1]);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[2] <<  8U);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[3] << 16U);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[4] << 24U);
+
+					ulAnd  = (unsigned long)(pucSequenceCnt[5]);
+					ulAnd |= (unsigned long)(pucSequenceCnt[6] <<  8U);
+					ulAnd |= (unsigned long)(pucSequenceCnt[7] << 16U);
+					ulAnd |= (unsigned long)(pucSequenceCnt[8] << 24U);
+
+					ulCmp  = (unsigned long)(pucSequenceCnt[9]);
+					ulCmp |= (unsigned long)(pucSequenceCnt[10] <<  8U);
+					ulCmp |= (unsigned long)(pucSequenceCnt[11] << 16U);
+					ulCmp |= (unsigned long)(pucSequenceCnt[12] << 24U);
+
+					ulTimeoutInMs  = (unsigned long)(pucSequenceCnt[13]);
+					ulTimeoutInMs |= (unsigned long)(pucSequenceCnt[14] <<  8U);
+					ulTimeoutInMs |= (unsigned long)(pucSequenceCnt[15] << 16U);
+					ulTimeoutInMs |= (unsigned long)(pucSequenceCnt[16] << 24U);
+
+					if( (ulRegisterAddress&3)!=0 )
+					{
+						ulResult = STM32_RESULT_UnalignedAddress;
+					}
+					else
+					{
+						ulResult = module_command_poll32(ulRegisterAddress, ulAnd, ulCmp, ulTimeoutInMs);
+						if( ulResult==STM32_RESULT_Ok )
+						{
+							pucSequenceCnt += 17U;
+						}
+					}
+				}
+				break;
+
 			case STM32_COMMAND_RunSequence:
 				/* The "run sequence" command can not be used in a sequence. */
 				break;
@@ -1001,6 +1097,20 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 *  ulParameter3 = vaule to OR
 		 */
 		ulResult = module_command_rmw32(ulParameter1, ulParameter2, ulParameter3);
+	}
+	else if( ulParameter0==STM32_COMMAND_PollData32 )
+	{
+		/* PollData32 has 1 parameter and an extended parameter block:
+		 *  ulParameter1 = address of the parameter block in STM32 memory
+		 *
+		 * Extended parameter block:
+		 *  0x00 = address in STM32 memory
+		 *  0x04 = value to AND
+		 *  0x08 = value to compare with
+		 *  0x0c = timeout in milliseconds until ([address] & ValueToAnd) == ValueToCompareWith
+		 */
+		tPtr.ul = ulParameter1;
+		ulResult = module_command_poll32(tPtr.pul[0], tPtr.pul[1], tPtr.pul[2], tPtr.pul[3]);
 	}
 	else if( ulParameter0==STM32_COMMAND_RunSequence )
 	{
