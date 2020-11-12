@@ -70,7 +70,7 @@ SConscript('stm32_stub/SConscript')
 # Build the app bridge module.
 #
 SConscript('module/SConscript')
-
+Import('BRIDGE_STM32_BIN', 'BRIDGE_STM32_LUA')
 
 """
 # ----------------------------------------------------------------------------
@@ -108,36 +108,43 @@ tDoc = atEnv.DEFAULT.Asciidoc(
 )
 """
 
-"""
-#----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
 #
-# Build the artifacts.
+# Build an archive.
 #
+strGroup = 'org.muhkuh.lua'
+strModule = 'app_bridge_stm32_stub'
 
 # Split the group by dots.
-aGroup = PROJECT_GROUP.split('.')
+aGroup = strGroup.split('.')
 # Build the path for all artifacts.
-strModulePath = 'targets/jonchki/repository/%s/%s/%s' % ('/'.join(aGroup), PROJECT_MODULE, PROJECT_VERSION)
+strModulePath = 'targets/jonchki/repository/%s/%s/%s' % ('/'.join(aGroup), strModule, PROJECT_VERSION)
 
-# Set the name of the artifact.
-strArtifact0 = 'uart'
+strArtifact = 'app_bridge_stm32_stub'
 
-tArcList0 = atEnv.DEFAULT.ArchiveList('zip')
-tArcList0.AddFiles('netx/',
-    UART_NETX4000)
-tArcList0.AddFiles('lua/',
-    LUA_MODULE)
-#tArcList0.AddFiles('doc/',
-#    tDoc)
-tArcList0.AddFiles('',
-    'installer/jonchki/install.lua')
+tArcList = atEnv.DEFAULT.ArchiveList('zip')
 
-tArtifact0 = atEnv.DEFAULT.Archive(os.path.join(strModulePath, '%s-%s.zip' % (strArtifact0, PROJECT_VERSION)), None, ARCHIVE_CONTENTS = tArcList0)
-tArtifact0Hash = atEnv.DEFAULT.Hash('%s.hash' % tArtifact0[0].get_path(), tArtifact0[0].get_path(), HASH_ALGORITHM='md5,sha1,sha224,sha256,sha384,sha512', HASH_TEMPLATE='${ID_UC}:${HASH}\n')
-tConfiguration0 = atEnv.DEFAULT.Version(os.path.join(strModulePath, '%s-%s.xml' % (strArtifact0, PROJECT_VERSION)), 'installer/jonchki/%s.xml' % PROJECT_MODULE)
-tConfiguration0Hash = atEnv.DEFAULT.Hash('%s.hash' % tConfiguration0[0].get_path(), tConfiguration0[0].get_path(), HASH_ALGORITHM='md5,sha1,sha224,sha256,sha384,sha512', HASH_TEMPLATE='${ID_UC}:${HASH}\n')
-tArtifact0Pom = atEnv.DEFAULT.ArtifactVersion(os.path.join(strModulePath, '%s-%s.pom' % (strArtifact0, PROJECT_VERSION)), 'installer/jonchki/pom.xml')
-"""
+#tArcList.AddFiles('doc/',
+#                  doc)
+
+tArcList.AddFiles('netx/',
+                  BRIDGE_STM32_BIN)
+
+tArcList.AddFiles('lua/app_bridge/modules/',
+                  BRIDGE_STM32_LUA)
+
+tArcList.AddFiles('',
+                  'installer/%s-%s/install.lua' % (strGroup, strModule))
+
+
+strBasePath = os.path.join(strModulePath, '%s-%s' % (strArtifact, PROJECT_VERSION))
+tArtifact = atEnv.DEFAULT.Archive('%s.zip' % strBasePath, None, ARCHIVE_CONTENTS = tArcList)
+tArtifactHash = atEnv.DEFAULT.Hash('%s.hash' % tArtifact[0].get_path(), tArtifact[0].get_path(), HASH_ALGORITHM='md5,sha1,sha224,sha256,sha384,sha512', HASH_TEMPLATE='${ID_UC}:${HASH}\n')
+tConfiguration = atEnv.DEFAULT.Version('%s.xml' % strBasePath, 'installer/%s-%s/%s.xml' % (strGroup, strModule, strArtifact))
+tConfigurationHash = atEnv.DEFAULT.Hash('%s.hash' % tConfiguration[0].get_path(), tConfiguration[0].get_path(), HASH_ALGORITHM='md5,sha1,sha224,sha256,sha384,sha512', HASH_TEMPLATE='${ID_UC}:${HASH}\n')
+tPom = atEnv.DEFAULT.ArtifactVersion('%s.pom' % strBasePath, 'installer/%s-%s/%s.pom' % (strGroup, strModule, strArtifact))
+
 
 """
 #----------------------------------------------------------------------------
