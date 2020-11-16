@@ -1,5 +1,7 @@
 #include <stdio.h>
 
+#include "hash/sha384.h"
+
 
 #define STM32BOOT_ACK                  0x79U
 #define STM32BOOT_NACK                 0x1fU
@@ -17,10 +19,15 @@
 #define STM32BOOTCMD_ReadoutProtect    0x82U
 #define STM32BOOTCMD_ReadoutUnprotect  0x92U
 
+/* Custom commands. */
+#define STM32BOOTCMD_HashMemory        0xC0U
+
 
 typedef union PTR_UNION
 {
 	unsigned long ul;
+	unsigned char *puc;
+	unsigned short *pus;
 	unsigned long *pul;
 } PTR_T;
 
@@ -485,6 +492,59 @@ static void cmd_write_memory(void)
 
 
 
+/* Define a buffer for the hash function.
+ * This is used in the simulated malloc.
+ */
+unsigned char aucSha512Buffer[256];
+unsigned char aucDigest[48];
+
+static void cmd_hash_memory(void)
+{
+	int iResult;
+	unsigned char aucAddressAndSizeMSB[8];
+	PTR_T tPtr;
+	unsigned long ulSizeInBytes;
+	unsigned int uiCnt;
+
+
+	/* ACK the command. */
+	send_ack();
+
+	/* Get the address and size (2 * 4 bytes in MSB order). */
+	iResult = get_xor_data(aucAddressAndSizeMSB, sizeof(aucAddressAndSizeMSB), 0x00);
+	if( iResult!=0 )
+	{
+		send_nack();
+	}
+	else
+	{
+		/* Convert the MSB address to a LSB pointer. */
+		tPtr.ul  =  (unsigned long)(aucAddressAndSizeMSB[3]);
+		tPtr.ul |= ((unsigned long)(aucAddressAndSizeMSB[2])) <<  8U;
+		tPtr.ul |= ((unsigned long)(aucAddressAndSizeMSB[1])) << 16U;
+		tPtr.ul |= ((unsigned long)(aucAddressAndSizeMSB[0])) << 24U;
+
+		ulSizeInBytes  =  (unsigned long)(aucAddressAndSizeMSB[7]);
+		ulSizeInBytes |= ((unsigned long)(aucAddressAndSizeMSB[6])) <<  8U;
+		ulSizeInBytes |= ((unsigned long)(aucAddressAndSizeMSB[5])) << 16U;
+		ulSizeInBytes |= ((unsigned long)(aucAddressAndSizeMSB[4])) << 24U;
+
+		/* Ack the address and size. */
+		send_ack();
+
+		sha384Compute(tPtr.puc, ulSizeInBytes, aucDigest);
+
+		/* Send the digest. */
+		for(uiCnt=0; uiCnt<sizeof(aucDigest); ++uiCnt)
+		{
+			uart_put(aucDigest[uiCnt]);
+//			uart_put(aucBigBuffer[uiCnt]);
+		}
+	}
+}
+
+
+
 void stub_main(void) __attribute__ ((noreturn));
 void stub_main(void)
 {
@@ -504,6 +564,10 @@ void stub_main(void)
 		else if( ucCommand==STM32BOOTCMD_WriteMemory )
 		{
 			cmd_write_memory();
+		}
+		else if( ucCommand==STM32BOOTCMD_HashMemory )
+		{
+			cmd_hash_memory();
 		}
 		else
 		{

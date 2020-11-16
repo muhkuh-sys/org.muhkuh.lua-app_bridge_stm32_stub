@@ -31,6 +31,8 @@ Import('atEnv')
 # This is the list of sources. The elements must be separated with whitespace
 # (i.e. spaces, tabs, newlines). The amount of whitespace does not matter.
 sources = """
+	src/hash/sha384.c
+	src/hash/sha512.c
 	src/init.S
 	src/main_stub.c
 	src/vectors.c

@@ -46,6 +46,9 @@
 #define STM32BOOTCMD_ReadoutProtect    0x82U
 #define STM32BOOTCMD_ReadoutUnprotect  0x92U
 
+/* Custom commands. */
+#define STM32BOOTCMD_HashMemory        0xC0U
+
 
 //SPI_CFG_T s_tSpiCfg;
 
@@ -497,6 +500,52 @@ static unsigned long stm32boot_execute_command_go(unsigned long ulAddress)
 
 
 
+static unsigned long stm32boot_execute_command_hash_memory(unsigned long ulAddress, unsigned long ulSizeInBytes, unsigned char *pucHash)
+{
+	unsigned long ulResult;
+	unsigned char aucAddressAndSize[8];
+	unsigned long ulTimeout;
+
+
+	/* Convert the address in a byte array.
+	 * NOTE: This must be MSB.
+	 */
+	aucAddressAndSize[3] = (unsigned char) (ulAddress & 0x000000ffU);
+	aucAddressAndSize[2] = (unsigned char)((ulAddress & 0x0000ff00U) >>  8U);
+	aucAddressAndSize[1] = (unsigned char)((ulAddress & 0x00ff0000U) >> 16U);
+	aucAddressAndSize[0] = (unsigned char)((ulAddress & 0xff000000U) >> 24U);
+
+	aucAddressAndSize[7] = (unsigned char) (ulSizeInBytes & 0x000000ffU);
+	aucAddressAndSize[6] = (unsigned char)((ulSizeInBytes & 0x0000ff00U) >>  8U);
+	aucAddressAndSize[5] = (unsigned char)((ulSizeInBytes & 0x00ff0000U) >> 16U);
+	aucAddressAndSize[4] = (unsigned char)((ulSizeInBytes & 0xff000000U) >> 24U);
+
+	/* Send the command. */
+	stm32boot_send_with_inv(STM32BOOTCMD_HashMemory);
+
+	/* Wait for ACK/NACK with a timeout of 1 second. */
+	ulResult = stm32boot_wait_for_ack(1000);
+	if( ulResult==STM32_RESULT_Ok )
+	{
+		/* Send the address and the size. */
+		stm32boot_send_xor_data(aucAddressAndSize, 8U, 0x00U);
+
+		/* Wait for ACK/NACK with a timeout of 250ms. */
+		ulResult = stm32boot_wait_for_ack(250);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			/* Hashing ist quite slow... */
+			ulTimeout = 250U + (ulSizeInBytes >> 16U) * 50U;
+			/* Receive the hash. */
+			ulResult = uart_receive(pucHash, 48U, ulTimeout, 0U);
+		}
+	}
+
+	return ulResult;
+}
+
+
+
 static unsigned long stm32boot_read_area(unsigned long ulAddress, unsigned char *pucData, unsigned int sizData)
 {
 	unsigned long ulResult;
@@ -585,12 +634,65 @@ static unsigned long stm32boot_write_area(unsigned long ulAddress, const unsigne
 
 
 
+static unsigned long stm32boot_verify_area(unsigned long ulAddress, const unsigned char *pucData, unsigned int sizData)
+{
+	unsigned long ulResult;
+	const unsigned char *pucCnt;
+	const unsigned char *pucEnd;
+	unsigned int sizMaxChunk;
+	unsigned int sizChunk;
+	int iCompare;
+	unsigned char aucVerify[128];
+
+
+	ulResult = STM32_RESULT_Ok;
+
+	sizMaxChunk = sizeof(aucVerify);
+
+	pucCnt = pucData;
+	pucEnd = pucData + sizData;
+	while( pucCnt<pucEnd )
+	{
+		/* Get the size of the next chunk. */
+		sizChunk = (unsigned int)(pucEnd-pucCnt);
+		if( sizChunk>sizMaxChunk )
+		{
+			sizChunk = sizMaxChunk;
+		}
+
+		/* Read the chunk into the buffer. */
+		ulResult = stm32boot_execute_command_read_memory(ulAddress, aucVerify, sizChunk);
+		if( ulResult==STM32_RESULT_Ok )
+		{
+			/* Compare the buffer with the data. */
+			iCompare = memcmp(pucCnt, aucVerify, sizChunk);
+			if( iCompare!=0 )
+			{
+				ulResult = STM32_RESULT_VerifyError;
+				break;
+			}
+			else
+			{
+				pucCnt += sizChunk;
+				ulAddress += sizChunk;
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	return ulResult;
+}
+
+
+
 static unsigned long install_stub(void)
 {
 	unsigned long ulResult;
 	unsigned char aucCpuId[2];
 	unsigned char aucBuffer[256];
-	unsigned char aucVerify[1024];
 	unsigned int uiDataReceived;
 	unsigned int fHasCmdReadMemory;
 	unsigned int fHasCmdWriteMemory;
@@ -654,23 +756,16 @@ static unsigned long install_stub(void)
 							ulResult = stm32boot_write_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
 							if( ulResult==STM32_RESULT_Ok )
 							{
-								ulResult = stm32boot_read_area(0x20004100U, aucVerify, uiStubSize);
+								ulResult = stm32boot_verify_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
 								if( ulResult==STM32_RESULT_Ok )
 								{
-									if( memcmp(_binary_stub_stm32h7xx_bin_start, aucVerify, uiStubSize)==0 )
+									ulResult = stm32boot_execute_command_go(0x20004100U);
+									if( ulResult==STM32_RESULT_Ok )
 									{
-										ulResult = stm32boot_execute_command_go(0x20004100U);
-										if( ulResult==STM32_RESULT_Ok )
-										{
-											/* Wait until the stub is active. */
-											systime_delay_ms(500);
+										/* Wait until the stub is active. */
+										systime_delay_ms(500);
 
-											ulResult = STM32_RESULT_Ok;
-										}
-									}
-									else
-									{
-										ulResult = STM32_RESULT_VerifyError;
+										ulResult = STM32_RESULT_Ok;
 									}
 								}
 							}
@@ -838,6 +933,18 @@ static unsigned long module_command_poll32(unsigned long ulAddress, unsigned lon
 
 
 
+static unsigned long module_command_hash_memory(unsigned long ulAddress, unsigned long ulAreaSizeInBytes, unsigned char *pucHashBuffer)
+{
+	unsigned long ulResult;
+
+
+	ulResult = stm32boot_execute_command_hash_memory(ulAddress, ulAreaSizeInBytes, pucHashBuffer);
+
+	return ulResult;
+}
+
+
+
 static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 {
 	unsigned long ulResult;
@@ -852,6 +959,7 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 	unsigned long ulOr;
 	unsigned long ulCmp;
 	unsigned long ulTimeoutInMs;
+	unsigned long ulSize;
 
 
 	ulResult = STM32_RESULT_Ok;
@@ -875,6 +983,7 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 		case STM32_COMMAND_WriteData32:
 		case STM32_COMMAND_RmwData32:
 		case STM32_COMMAND_PollData32:
+		case STM32_COMMAND_HashMemory:
 			ulResult = STM32_RESULT_Ok;
 			break;
 
@@ -1041,6 +1150,40 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 				}
 				break;
 
+			case STM32_COMMAND_HashMemory:
+				/* The HashMemory command needs 9 bytes. */
+				if( ulSizeLeft<9U )
+				{
+					ulResult = STM32_RESULT_NotEnoughSequenceData;
+				}
+				else
+				{
+					ulRegisterAddress  = (unsigned long)(pucSequenceCnt[1]);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[2] <<  8U);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[3] << 16U);
+					ulRegisterAddress |= (unsigned long)(pucSequenceCnt[4] << 24U);
+
+					ulSize  = (unsigned long)(pucSequenceCnt[5]);
+					ulSize |= (unsigned long)(pucSequenceCnt[6] <<  8U);
+					ulSize |= (unsigned long)(pucSequenceCnt[7] << 16U);
+					ulSize |= (unsigned long)(pucSequenceCnt[8] << 24U);
+
+					if( (ulRegisterAddress&3)!=0 )
+					{
+						ulResult = STM32_RESULT_UnalignedAddress;
+					}
+					else
+					{
+						ulResult = module_command_hash_memory(ulRegisterAddress, ulSize, pucOutCnt);
+						if( ulResult==STM32_RESULT_Ok )
+						{
+							pucSequenceCnt += 13U;
+							pucOutCnt += 48U;
+						}
+					}
+				}
+				break;
+
 			case STM32_COMMAND_RunSequence:
 				/* The "run sequence" command can not be used in a sequence. */
 				break;
@@ -1111,6 +1254,16 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 */
 		tPtr.ul = ulParameter1;
 		ulResult = module_command_poll32(tPtr.pul[0], tPtr.pul[1], tPtr.pul[2], tPtr.pul[3]);
+	}
+	else if( ulParameter0==STM32_COMMAND_HashMemory )
+	{
+		/* HashMemory has 3 parameter:
+		 * ulParameter1 = address in STM32 memory
+		 * ulParameter2 = size of the area in bytes
+		 * ulParameter3 = address of the buffer for the hash (must have space for 48 bytes)
+		 */
+		tPtr.ul = ulParameter3;
+		ulResult = module_command_hash_memory(ulParameter1, ulParameter2, tPtr.puc);
 	}
 	else if( ulParameter0==STM32_COMMAND_RunSequence )
 	{

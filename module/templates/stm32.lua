@@ -32,6 +32,12 @@ function Stm32Sequence:_init(tStm32, tLog)
     ulTimeoutInMs:u4
   ]])
 
+  self.tStructureHashMemory = vstruct.compile([[
+    ucCommand:u1
+    ulAddress:u4
+    ulSize:u4
+  ]])
+
   self.tSequence = { readsize = 0 }
 end
 
@@ -91,6 +97,20 @@ function Stm32Sequence:poll_data32(ulAddress, ulAnd, ulCmp, ulTimeoutInMs)
 end
 
 
+function Stm32Sequence:hash_memory(ulAddress, ulSize)
+  local strBin
+  strBin = self.tStructureHashMemory:write{
+    ucCommand = self.tStm32.STM32_COMMAND_HashMemory,
+    ulAddress = ulAddress,
+    ulSize = ulSize
+  }
+
+  local tSequence = self.tSequence
+  table.insert(tSequence, strBin)
+  tSequence.readsize = tSequence.readsize + 48
+end
+
+
 function Stm32Sequence:run()
   local tSequence = self.tSequence
 
@@ -126,6 +146,7 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.STM32_COMMAND_WriteData32 = ${STM32_COMMAND_WriteData32}
   self.STM32_COMMAND_RmwData32 = ${STM32_COMMAND_RmwData32}
   self.STM32_COMMAND_PollData32 = ${STM32_COMMAND_PollData32}
+  self.STM32_COMMAND_HashMemory = ${STM32_COMMAND_HashMemory}
   self.STM32_COMMAND_RunSequence = ${STM32_COMMAND_RunSequence}
 end
 
@@ -207,6 +228,20 @@ function AppBridgeModuleStm32:poll_data32(ulAddress, ulAnd, ulCmp, ulTimeoutInMs
     tLog.error('Failed to poll (STM32[0x%08x] AND 0x%08x) == 0x%08x in %dms : %d', ulAddress, ulAnd, ulCmp, ulTimeoutInMs, ulResult)
     error('Failed to poll.')
   end
+end
+
+
+function AppBridgeModuleStm32:hash_memory(ulAddress, ulSize)
+  local tAppBridge = self.tAppBridge
+  local tLog = self.tLog
+
+  local ulResult = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_HashMemory, ulAddress, ulSize, self.ulModuleBufferArea)
+  if ulResult~=0 then
+    tLog.error('Failed to hash STM32[0x%08x, 0x%08x[ : %d', ulAddress, ulAddress+ulSize, ulResult)
+    error('Failed to read.')
+  end
+  local strHash = tAppBridge:read_area(self.ulModuleBufferArea, 48)
+  return strHash
 end
 
 

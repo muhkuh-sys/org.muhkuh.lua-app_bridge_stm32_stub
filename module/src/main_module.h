@@ -47,7 +47,8 @@ typedef enum STM32_COMMAND_ENUM
 	STM32_COMMAND_WriteData32               = 2,
 	STM32_COMMAND_RmwData32                 = 3,
 	STM32_COMMAND_PollData32                = 4,
-	STM32_COMMAND_RunSequence               = 5
+	STM32_COMMAND_HashMemory                = 5,
+	STM32_COMMAND_RunSequence               = 6
 } STM32_COMMAND_T;
 
 
