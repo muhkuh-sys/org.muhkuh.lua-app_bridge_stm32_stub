@@ -1204,45 +1204,50 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, unsigned long ulParameter2, unsigned long ulParameter3)
 {
 	unsigned long ulResult;
+	STM32_COMMAND_T tCmd;
 	PTR_T tPtr;
 
 
-	if( ulParameter0==STM32_COMMAND_Initialize )
+	ulResult = STM32_RESULT_UnknownCommand;
+
+	tCmd = (STM32_COMMAND_T)ulParameter0;
+	switch(tCmd)
 	{
+	case STM32_COMMAND_Initialize:
 		/* Initialize has no parameter */
 		setup_padctrl();
 		uart_initialize();
 		uart_clean_receive_fifo();
 		ulResult = install_stub();
-	}
-	else if( ulParameter0==STM32_COMMAND_ReadData32 )
-	{
+		break;
+
+	case STM32_COMMAND_ReadData32:
 		/* ReadData32 has 2 parameter:
 		 *  ulParameter1 = address in STM32 memory
 		 *  ulParameter2 = destination address in netX APP memory for the data
 		 */
 		tPtr.ul = ulParameter2;
 		ulResult = module_command_read32(ulParameter1, tPtr.pul);
-	}
-	else if( ulParameter0==STM32_COMMAND_WriteData32 )
-	{
+		break;
+
+	case STM32_COMMAND_WriteData32:
 		/* WriteData32 has 2 parameter:
 		 *  ulParameter1 = address in STM32 memory
 		 *  ulParameter2 = data to write to the STM32
 		 */
 		ulResult = module_command_write32(ulParameter1, ulParameter2);
-	}
-	else if( ulParameter0==STM32_COMMAND_RmwData32 )
-	{
+		break;
+
+	case STM32_COMMAND_RmwData32:
 		/* RmwData32 has 3 parameter:
 		 *  ulParameter1 = address in STM32 memory
 		 *  ulParameter2 = value to AND
 		 *  ulParameter3 = vaule to OR
 		 */
 		ulResult = module_command_rmw32(ulParameter1, ulParameter2, ulParameter3);
-	}
-	else if( ulParameter0==STM32_COMMAND_PollData32 )
-	{
+		break;
+
+	case STM32_COMMAND_PollData32:
 		/* PollData32 has 1 parameter and an extended parameter block:
 		 *  ulParameter1 = address of the parameter block in STM32 memory
 		 *
@@ -1254,9 +1259,9 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 */
 		tPtr.ul = ulParameter1;
 		ulResult = module_command_poll32(tPtr.pul[0], tPtr.pul[1], tPtr.pul[2], tPtr.pul[3]);
-	}
-	else if( ulParameter0==STM32_COMMAND_HashMemory )
-	{
+		break;
+
+	case STM32_COMMAND_HashMemory:
 		/* HashMemory has 3 parameter:
 		 * ulParameter1 = address in STM32 memory
 		 * ulParameter2 = size of the area in bytes
@@ -1264,17 +1269,14 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 */
 		tPtr.ul = ulParameter3;
 		ulResult = module_command_hash_memory(ulParameter1, ulParameter2, tPtr.puc);
-	}
-	else if( ulParameter0==STM32_COMMAND_RunSequence )
-	{
+		break;
+
+	case STM32_COMMAND_RunSequence:
 		/* RunSequence has 1 parameter:
 		 * ulParameter1 = the start address of the sequence data
 		 */
 		ulResult = module_command_sequence(ulParameter1);
-	}
-	else
-	{
-		ulResult = STM32_RESULT_UnknownCommand;
+		break;
 	}
 
 	return ulResult;
