@@ -20,7 +20,7 @@ jobs:
       with:
         submodules: recursive
     - name: Build
-      run: python3 build_artifact.py mbs/mbs
+      run: python3 mbs/mbs
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
