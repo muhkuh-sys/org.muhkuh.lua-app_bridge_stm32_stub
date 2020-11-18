@@ -878,6 +878,17 @@ static unsigned long module_command_write32(unsigned long ulAddress, unsigned lo
 
 
 
+static unsigned long module_command_write_area(unsigned long ulAddress, const unsigned char *pucData, unsigned int sizData)
+{
+	unsigned long ulResult;
+
+
+	ulResult = stm32boot_write_area(ulAddress, pucData, sizData);
+	return ulResult;
+}
+
+
+
 static unsigned long module_command_rmw32(unsigned long ulAddress, unsigned long ulAnd, unsigned long ulOr)
 {
 	unsigned long ulResult;
@@ -1021,6 +1032,10 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 			ulResult = STM32_RESULT_Ok;
 			break;
 
+		case STM32_COMMAND_WriteArea:
+			/* Not yet... */
+			break;
+
 		case STM32_COMMAND_RunSequence:
 			/* The "run sequence" command can not be used in a sequence. */
 			break;
@@ -1105,6 +1120,10 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 						}
 					}
 				}
+				break;
+
+			case STM32_COMMAND_WriteArea:
+				/* Not yet... */
 				break;
 
 			case STM32_COMMAND_RmwData32:
@@ -1302,6 +1321,16 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 *  ulParameter2 = data to write to the STM32
 		 */
 		ulResult = module_command_write32(ulParameter1, ulParameter2);
+		break;
+
+	case STM32_COMMAND_WriteArea:
+		/* WriteArea has 3 parameter:
+		 *  ulParameter1 = address in STM32 memory (copy destination)
+		 *  ulParameter2 = address in netX90 memory (copy source)
+		 *  ulParameter3 = size of the area in bytes
+		 */
+		tPtr.ul = ulParameter2;
+		ulResult = module_command_write_area(ulParameter1, tPtr.puc, ulParameter3);
 		break;
 
 	case STM32_COMMAND_RmwData32:

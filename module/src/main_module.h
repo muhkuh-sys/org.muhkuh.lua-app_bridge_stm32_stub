@@ -46,11 +46,12 @@ typedef enum STM32_COMMAND_ENUM
 	STM32_COMMAND_Initialize                = 0,
 	STM32_COMMAND_ReadData32                = 1,
 	STM32_COMMAND_WriteData32               = 2,
-	STM32_COMMAND_RmwData32                 = 3,
-	STM32_COMMAND_PollData32                = 4,
-	STM32_COMMAND_HashMemory                = 5,
-	STM32_COMMAND_RunSequence               = 6,
-	STM32_COMMAND_ExtendedEraseFlashPage    = 7
+	STM32_COMMAND_WriteArea                 = 3,
+	STM32_COMMAND_RmwData32                 = 4,
+	STM32_COMMAND_PollData32                = 5,
+	STM32_COMMAND_HashMemory                = 6,
+	STM32_COMMAND_RunSequence               = 7,
+	STM32_COMMAND_ExtendedEraseFlashPage    = 8
 } STM32_COMMAND_T;
 
 

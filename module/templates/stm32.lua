@@ -144,6 +144,7 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.STM32_COMMAND_Initialize = ${STM32_COMMAND_Initialize}
   self.STM32_COMMAND_ReadData32 = ${STM32_COMMAND_ReadData32}
   self.STM32_COMMAND_WriteData32 = ${STM32_COMMAND_WriteData32}
+  self.STM32_COMMAND_WriteArea = ${STM32_COMMAND_WriteArea}
   self.STM32_COMMAND_RmwData32 = ${STM32_COMMAND_RmwData32}
   self.STM32_COMMAND_PollData32 = ${STM32_COMMAND_PollData32}
   self.STM32_COMMAND_HashMemory = ${STM32_COMMAND_HashMemory}
@@ -199,6 +200,37 @@ function AppBridgeModuleStm32:write_data32(ulAddress, ulData)
     tLog.error('Failed to write STM32[0x%08x]=0x%08x : %d', ulAddress, ulData, ulResult)
     error('Failed to write.')
   end
+end
+
+
+function AppBridgeModuleStm32:write_area(ulAddress, strData)
+  local tLog = self.tLog
+  local tAppBridge = self.tAppBridge
+  local tResult
+
+  local sizData = string.len(strData)
+  if sizData==0 then
+    tLog.debug('Ignoring empty write request.')
+    tResult = true
+  else
+    -- Copy the data to the APP buffer.
+    tResult = tAppBridge:write_area(self.ulModuleBufferArea, strData)
+    if tResult~=true then
+      tLog.error('Failed to write the data to the APP memory.')
+      error('Failed to write the data to the APP memory.')
+    else
+      -- Run the sequence.
+      local ulResult = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_WriteArea, ulAddress, self.ulModuleBufferArea, sizData)
+      if ulResult~=0 then
+        tLog.error('Failed to write the area : %d', ulResult)
+        error('Failed to write the area.')
+      else
+        tResult = true
+      end
+    end
+  end
+
+  return tResult
 end
 
 
