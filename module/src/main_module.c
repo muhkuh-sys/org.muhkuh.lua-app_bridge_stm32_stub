@@ -633,9 +633,9 @@ static unsigned long stm32boot_write_area(unsigned long ulAddress, const unsigne
 	ulResult = STM32_RESULT_Ok;
 
 	/* Chunk the data.
-	 * NOTE: Use 128 bytes for now, even if the STM32 bootloader supports 256.
+	 * The STM32 bootloader supports cunks of up to 256 bytes.
 	 */
-	sizMaxChunk = 128;
+	sizMaxChunk = 256;
 
 	pucCnt = pucData;
 	pucEnd = pucData + sizData;
