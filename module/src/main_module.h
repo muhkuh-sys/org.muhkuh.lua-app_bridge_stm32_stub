@@ -36,7 +36,8 @@ typedef enum STM32_RESULT_ENUM
 	STM32_RESULT_UnexpectedCpuID              =  8,
 	STM32_RESULT_RequiredCommandsUnavailable  =  9,
 	STM32_RESULT_VerifyError                  = 10,
-	STM32_RESULT_PollTimedOut                 = 11
+	STM32_RESULT_PollTimedOut                 = 11,
+	STM32_RESULT_InvalidFlashPage             = 12
 } STM32_RESULT_T;
 
 
@@ -48,7 +49,8 @@ typedef enum STM32_COMMAND_ENUM
 	STM32_COMMAND_RmwData32                 = 3,
 	STM32_COMMAND_PollData32                = 4,
 	STM32_COMMAND_HashMemory                = 5,
-	STM32_COMMAND_RunSequence               = 6
+	STM32_COMMAND_RunSequence               = 6,
+	STM32_COMMAND_ExtendedEraseFlashPage    = 7
 } STM32_COMMAND_T;
 
 

@@ -148,6 +148,7 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.STM32_COMMAND_PollData32 = ${STM32_COMMAND_PollData32}
   self.STM32_COMMAND_HashMemory = ${STM32_COMMAND_HashMemory}
   self.STM32_COMMAND_RunSequence = ${STM32_COMMAND_RunSequence}
+  self.STM32_COMMAND_ExtendedEraseFlashPage = ${STM32_COMMAND_ExtendedEraseFlashPage}
 end
 
 
@@ -284,6 +285,18 @@ function AppBridgeModuleStm32:__sequence_run(strSequence, sizResultData)
   end
 
   return tResult
+end
+
+
+function AppBridgeModuleStm32:extended_erase_flash_page(usFlashPage)
+  local tAppBridge = self.tAppBridge
+  local tLog = self.tLog
+
+  local ulResult = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_ExtendedEraseFlashPage, usFlashPage)
+  if ulResult~=0 then
+    tLog.error('Failed to erase flash page %d: %d', usFlashPage, ulResult)
+    error('Failed to erase.')
+  end
 end
 
 

@@ -500,6 +500,37 @@ static unsigned long stm32boot_execute_command_go(unsigned long ulAddress)
 
 
 
+static unsigned long stm32boot_execute_command_extended_erase_memory(unsigned short usFlashPage)
+{
+	unsigned long ulResult;
+	unsigned char aucData[4];
+
+
+	/* Send the command. */
+	stm32boot_send_with_inv(STM32BOOTCMD_ExtendedErase);
+
+	/* Wait for ACK/NACK with a timeout of 1 second. */
+	ulResult = stm32boot_wait_for_ack(1000);
+	if( ulResult==STM32_RESULT_Ok )
+	{
+		/* Send the flash page to erase.
+		 * The first byte is the number of page numbers to follow minus 1.
+		 */
+		aucData[0] = 0x00U;
+		aucData[1] = 0x00U;
+		aucData[2] = (unsigned char)((usFlashPage & 0xff00U) >> 8U);
+		aucData[3] = (unsigned char) (usFlashPage & 0x00ffU);
+		stm32boot_send_xor_data(aucData, 4U, 0x00U);
+
+		/* Erasing can be very slow. Wait for ACK/NACK with a timeout of 5000ms. */
+		ulResult = stm32boot_wait_for_ack(5000);
+	}
+
+	return ulResult;
+}
+
+
+
 static unsigned long stm32boot_execute_command_hash_memory(unsigned long ulAddress, unsigned long ulSizeInBytes, unsigned char *pucHash)
 {
 	unsigned long ulResult;
@@ -993,6 +1024,10 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 		case STM32_COMMAND_RunSequence:
 			/* The "run sequence" command can not be used in a sequence. */
 			break;
+
+		case STM32_COMMAND_ExtendedEraseFlashPage:
+			/* The "erase flash page" command can only be used with the STM32 bootloader. */
+			break;
 		}
 		if( ulResult==STM32_RESULT_Ok )
 		{
@@ -1190,6 +1225,10 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 			case STM32_COMMAND_RunSequence:
 				/* The "run sequence" command can not be used in a sequence. */
 				break;
+
+			case STM32_COMMAND_ExtendedEraseFlashPage:
+				/* The "erase flash page" command can only be used with the STM32 bootloader. */
+				break;
 			}
 
 			if( ulResult!=STM32_RESULT_Ok )
@@ -1197,6 +1236,27 @@ static unsigned long module_command_sequence(unsigned long ulSequenceSize)
 				break;
 			}
 		}
+	}
+
+	return ulResult;
+}
+
+
+
+static unsigned long module_command_extended_erase(unsigned long ulFlashPage)
+{
+	unsigned long ulResult;
+	unsigned short usFlashPage;
+
+
+	if( ulFlashPage>=0xff00U )
+	{
+		ulResult = STM32_RESULT_InvalidFlashPage;
+	}
+	else
+	{
+		usFlashPage = (unsigned short)ulFlashPage;
+		ulResult = stm32boot_execute_command_extended_erase_memory(usFlashPage);
 	}
 
 	return ulResult;
@@ -1283,6 +1343,12 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 		 */
 		ulResult = module_command_sequence(ulParameter1);
 		break;
+
+	case STM32_COMMAND_ExtendedEraseFlashPage:
+		/* EraseFlashPage has 1 parameter:
+		 * ulParameter1 = the number of the flash page to erase
+		 */
+		ulResult = module_command_extended_erase(ulParameter1);
 	}
 
 	return ulResult;
