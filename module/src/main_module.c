@@ -688,7 +688,7 @@ static unsigned long stm32boot_verify_area(unsigned long ulAddress, const unsign
 
 
 
-static unsigned long install_stub(void)
+static unsigned long install_stub(unsigned long ulOnlyActivateBootloader)
 {
 	unsigned long ulResult;
 	unsigned char aucCpuId[2];
@@ -751,21 +751,24 @@ static unsigned long install_stub(void)
 						}
 						if( fHasCmdReadMemory!=0U && fHasCmdWriteMemory!=0U && fHasCmdGo!=0U )
 						{
-							/* Get the size of the STM32 stub. */
-							uiStubSize = (unsigned int)(_binary_stub_stm32h7xx_bin_end - _binary_stub_stm32h7xx_bin_start);
-							ulResult = stm32boot_write_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
-							if( ulResult==STM32_RESULT_Ok )
+							if( ulOnlyActivateBootloader==0U )
 							{
-								ulResult = stm32boot_verify_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
+								/* Get the size of the STM32 stub. */
+								uiStubSize = (unsigned int)(_binary_stub_stm32h7xx_bin_end - _binary_stub_stm32h7xx_bin_start);
+								ulResult = stm32boot_write_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
 								if( ulResult==STM32_RESULT_Ok )
 								{
-									ulResult = stm32boot_execute_command_go(0x20004100U);
+									ulResult = stm32boot_verify_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
 									if( ulResult==STM32_RESULT_Ok )
 									{
-										/* Wait until the stub is active. */
-										systime_delay_ms(500);
+										ulResult = stm32boot_execute_command_go(0x20004100U);
+										if( ulResult==STM32_RESULT_Ok )
+										{
+											/* Wait until the stub is active. */
+											systime_delay_ms(500);
 
-										ulResult = STM32_RESULT_Ok;
+											ulResult = STM32_RESULT_Ok;
+										}
 									}
 								}
 							}
@@ -1214,11 +1217,14 @@ unsigned long module(unsigned long ulParameter0, unsigned long ulParameter1, uns
 	switch(tCmd)
 	{
 	case STM32_COMMAND_Initialize:
-		/* Initialize has no parameter */
+		/* Initialize has 1 parameter:
+		 *   ulParameter1 = 0 -> activate bootloader and install the stub
+		 *                  1 -> only activate the bootloader
+		 */
 		setup_padctrl();
 		uart_initialize();
 		uart_clean_receive_fifo();
-		ulResult = install_stub();
+		ulResult = install_stub(ulParameter1);
 		break;
 
 	case STM32_COMMAND_ReadData32:

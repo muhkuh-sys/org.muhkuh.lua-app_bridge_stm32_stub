@@ -151,9 +151,11 @@ function AppBridgeModuleStm32:_init(tAppBridge, tLog)
 end
 
 
-function AppBridgeModuleStm32:initialize()
+function AppBridgeModuleStm32:initialize(ulOnlyActivateBootloader)
   local tAppBridge = self.tAppBridge
   local tLog = self.tLog
+  -- The default is to install the stub.
+  ulOnlyActivateBootloader = ulOnlyActivateBootloader or 0
 
   -- Download the Stm32 module.
   local tModuleData, strError = self.pl.utils.readfile(self.strModulePath, true)
@@ -165,7 +167,7 @@ function AppBridgeModuleStm32:initialize()
 
   -- Initialize the UART connection to the STM32.
   tLog.info('STM32 initialize')
-  local ulValue = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_Initialize, 0)
+  local ulValue = tAppBridge:call(self.ulModuleExecAddress, self.STM32_COMMAND_Initialize, ulOnlyActivateBootloader)
   if ulValue~=0 then
     tLog.error('Failed to initialize the STM32 module: %s', tostring(ulValue))
     error('Failed to initialize the STM32 module.')
