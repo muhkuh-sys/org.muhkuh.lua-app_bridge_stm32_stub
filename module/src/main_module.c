@@ -566,7 +566,7 @@ static unsigned long stm32boot_execute_command_hash_memory(unsigned long ulAddre
 		if( ulResult==STM32_RESULT_Ok )
 		{
 			/* Hashing ist quite slow... */
-			ulTimeout = 500U + (ulSizeInBytes >> 16U) * 50U;
+			ulTimeout = 640U + (ulSizeInBytes >> 16U) * 128U;
 			/* Receive the hash. */
 			ulResult = uart_receive(pucHash, 48U, ulTimeout, 0U);
 		}
