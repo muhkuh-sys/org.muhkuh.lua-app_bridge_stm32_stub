@@ -10,6 +10,9 @@
     .func start, start
     .type start, STT_FUNC
 start:
+	@ Disable FIQ and IRQ.
+	cpsid   fi
+
 	ldr     sp, =__STACK_TOP__
 
 @----------------------------------------------------------------------------
