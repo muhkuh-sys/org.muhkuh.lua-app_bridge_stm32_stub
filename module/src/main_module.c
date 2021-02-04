@@ -786,13 +786,13 @@ static unsigned long install_stub(unsigned long ulOnlyActivateBootloader)
 							{
 								/* Get the size of the STM32 stub. */
 								uiStubSize = (unsigned int)(_binary_stub_stm32h7xx_bin_end - _binary_stub_stm32h7xx_bin_start);
-								ulResult = stm32boot_write_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
+								ulResult = stm32boot_write_area(0x24040000U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
 								if( ulResult==STM32_RESULT_Ok )
 								{
-									ulResult = stm32boot_verify_area(0x20004100U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
+									ulResult = stm32boot_verify_area(0x24040000U, _binary_stub_stm32h7xx_bin_start, uiStubSize);
 									if( ulResult==STM32_RESULT_Ok )
 									{
-										ulResult = stm32boot_execute_command_go(0x20004100U);
+										ulResult = stm32boot_execute_command_go(0x24040000U);
 										if( ulResult==STM32_RESULT_Ok )
 										{
 											/* Wait until the stub is active. */
