@@ -128,7 +128,6 @@ local AppBridgeModuleStm32 = class()
 
 function AppBridgeModuleStm32:_init(tAppBridge, tLog)
   self.pl = require'pl.import_into'()
-  self.bit = require 'bit'
 
   self.tAppBridge = tAppBridge
   self.tLog = tLog
