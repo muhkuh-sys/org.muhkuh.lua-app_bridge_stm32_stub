@@ -172,6 +172,7 @@ static void setup_gpio_and_uart(void)
 	STM32H7xx_DEF_ptGpioBArea;
 //	STM32H7xx_DEF_ptGpioIArea;
 	STM32H7xx_DEF_ptUsart3Area;
+	STM32H7xx_DEF_ptRccArea;
 	unsigned long ulValue;
 
 
@@ -205,6 +206,11 @@ static void setup_gpio_and_uart(void)
 	/*
 	 * Setup the UART.
 	 */
+	/* Activate the clock for USART3. */
+	ulValue  = ptRccArea->APB1LENR;
+	ulValue |= 0x00040000;
+	ptRccArea->APB1LENR = ulValue;
+
 	/* Disable the UART. */
 	ptUsart3Area->ulCR1 = 0;
 
