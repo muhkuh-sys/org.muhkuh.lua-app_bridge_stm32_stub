@@ -167,6 +167,10 @@ typedef struct STM32H7xx_RCC_AREA_Ttag
 #define STM32H7xx_DEF_ptRccArea STM32H7xx_RCC_AREA_T * const ptRccArea = (STM32H7xx_RCC_AREA_T * const)Addr_STM32H7xx_rcc;
 
 
+/* The GPIO B10 and B11 pins are used for the UART communication.
+ * PB10 is switched to USART3_TX,
+ * PB11 is switched to USART3_RX.
+ */
 static void setup_gpio_and_uart(void)
 {
 	STM32H7xx_DEF_ptGpioBArea;
@@ -175,6 +179,11 @@ static void setup_gpio_and_uart(void)
 	STM32H7xx_DEF_ptRccArea;
 	unsigned long ulValue;
 
+
+	/* Enable GPIOB. */
+	ulValue  = ptRccArea->AHB4ENR;
+	ulValue |= 1U<<1;
+	ptRccArea->AHB4ENR = ulValue;
 
 	/* Switch GPIO B10 and B11 to peripheral. */
 	ulValue  = ptGpioBArea->ulMode;
